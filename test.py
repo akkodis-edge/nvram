@@ -36,8 +36,11 @@ class test_user_base(unittest.TestCase):
         self.assertFalse(os.path.isfile(self.env['NVRAM_SYSTEM_B']))
         self.tmpdir.cleanup()
         
-    def nvram_set(self, key, val):
-        nvram(self.env, ['--set', key, val], sys=self.sys)
+    def nvram_set(self, pairs):
+        args = []
+        for key, val in pairs:
+            args.extend(['--set', key, val])
+        nvram(self.env, args, sys=self.sys)
         
     def nvram_get(self, key):
         return nvram(self.env, ['--get', key], sys=self.sys).rstrip()
@@ -46,14 +49,17 @@ class test_user_base(unittest.TestCase):
         stdout = nvram(self.env, ['--list'], sys=self.sys)
         return dict(pair.split("=") for pair in stdout.split())
     
-    def nvram_delete(self, key):
-        nvram(self.env, ['--del', key], sys=self.sys)
+    def nvram_delete(self, keys):
+        args = []
+        for key in keys:
+            args.extend(['--del', key])
+        nvram(self.env, args, sys=self.sys)
 
 class test_user_set_get(test_user_base):
     def test_set_get(self):
         key = 'key1'
         val = 'val1'
-        self.nvram_set(key, val)
+        self.nvram_set([(key, val)])
         self.assertEqual(val, self.nvram_get(key))
      
     def test_set_get_multiple(self):
@@ -62,7 +68,7 @@ class test_user_set_get(test_user_base):
             key = f'key{i}'
             val = f'val{i}'
             attributes[key] = val
-            self.nvram_set(key, val)
+            self.nvram_set([(key, val)])
         
         for key, value in attributes.items():
             read = self.nvram_get(key)
@@ -77,15 +83,15 @@ class test_user_set_get(test_user_base):
         key = 'key1'
         val1 = 'val1'
         val2 = 'val2'
-        self.nvram_set(key, val1)
-        self.nvram_set(key, val2)
+        self.nvram_set([(key, val1)])
+        self.nvram_set([(key, val2)])
         self.assertEqual(val2, self.nvram_get(key))
         
     def test_with_prefix(self):
         key = 'SYS_key1'
         val = 'val1'
         with self.assertRaises(CalledProcessError):
-            self.nvram_set(key, val)
+            self.nvram_set([(key, val)])
 
 class test_user_list(test_user_base):
     def test_list(self):
@@ -94,7 +100,7 @@ class test_user_list(test_user_base):
             key = f'key{i}'
             val = f'val{i}'
             attributes[key] = val
-            self.nvram_set(key, val)
+            self.nvram_set([(key, val)])
         d = self.nvram_list()
         self.assertEqual(d, attributes)
         
@@ -106,15 +112,29 @@ class test_user_delete(test_user_base):
     def test_delete(self):
         key = 'key1'
         val = 'val1'
-        self.nvram_set(key, val)
-        self.nvram_delete(key)
+        self.nvram_set([(key, val)])
+        self.nvram_delete([key])
         with self.assertRaises(CalledProcessError):
             self.nvram_get(key)
     
     def test_empty(self):
         key = 'key1'
-        self.nvram_delete(key)
-  
+        self.nvram_delete([key])
+        
+class test_user_multi_set_delete(test_user_base):
+    def test_delete(self):
+        key1 = 'key1'
+        val1 = 'val1'
+        key2 = 'key2'
+        val2 = 'val2'
+        self.nvram_set([(key1, val1), (key2, val2)])
+        self.assertEqual(val1, self.nvram_get(key1))
+        self.assertEqual(val2, self.nvram_get(key2))
+        self.nvram_delete([key1, key2])
+        with self.assertRaises(CalledProcessError):
+            self.nvram_get(key1)
+        with self.assertRaises(CalledProcessError):
+            self.nvram_get(key2)
 '''
 
             SYSTEM mode (--sys)
@@ -135,7 +155,7 @@ class test_system_set_get(test_system_base):
     def test_set_get(self):
         key = 'SYS_key1'
         val = 'val1'
-        self.nvram_set(key, val)
+        self.nvram_set([(key, val)])
         self.assertEqual(val, self.nvram_get(key))
      
     def test_set_get_multiple(self):
@@ -144,7 +164,7 @@ class test_system_set_get(test_system_base):
             key = f'SYS_key{i}'
             val = f'val{i}'
             attributes[key] = val
-            self.nvram_set(key, val)
+            self.nvram_set([(key, val)])
         
         for key, value in attributes.items():
             read = self.nvram_get(key)
@@ -159,22 +179,22 @@ class test_system_set_get(test_system_base):
         key = 'SYS_key1'
         val1 = 'val1'
         val2 = 'val2'
-        self.nvram_set(key, val1)
-        self.nvram_set(key, val2)
+        self.nvram_set([(key, val1)])
+        self.nvram_set([(key, val2)])
         self.assertEqual(val2, self.nvram_get(key))
         
     def test_without_prefix(self):
         key = 'key1'
         val = 'val1'
         with self.assertRaises(CalledProcessError):
-            self.nvram_set(key, val)
+            self.nvram_set([(key, val)])
             
     def test_without_unlock(self):
         key = 'SYS_key1'
         val = 'val1'
         self.env.pop('NVRAM_SYSTEM_UNLOCK')
         with self.assertRaises(CalledProcessError):
-            self.nvram_set(key, val)
+            self.nvram_set([(key, val)])
         
 class test_system_list(test_system_base):
     def test_list(self):
@@ -183,7 +203,7 @@ class test_system_list(test_system_base):
             key = f'SYS_key{i}'
             val = f'val{i}'
             attributes[key] = val
-            self.nvram_set(key, val)
+            self.nvram_set([(key, val)])
         d = self.nvram_list()
         self.assertEqual(d, attributes)
         
@@ -195,21 +215,35 @@ class test_system_delete(test_system_base):
     def test_delete(self):
         key = 'SYS_key1'
         val = 'val1'
-        self.nvram_set(key, val)
-        self.nvram_delete(key)
+        self.nvram_set([(key, val)])
+        self.nvram_delete([key])
         with self.assertRaises(CalledProcessError):
             self.nvram_get(key)
             
     def test_empty(self):
         key = 'SYS_key1'
-        self.nvram_delete(key)
+        self.nvram_delete([key])
         
     def test_without_unlock(self):
         key = 'SYS_key1'
         self.env.pop('NVRAM_SYSTEM_UNLOCK')
         with self.assertRaises(CalledProcessError):
-            self.nvram_delete(key)
-            
+            self.nvram_delete([key])
+
+class test_system_multi_set_delete(test_system_base):
+    def test_delete(self):
+        key1 = 'SYS_key1'
+        val1 = 'val1'
+        key2 = 'SYS_key2'
+        val2 = 'val2'
+        self.nvram_set([(key1, val1), (key2, val2)])
+        self.assertEqual(val1, self.nvram_get(key1))
+        self.assertEqual(val2, self.nvram_get(key2))
+        self.nvram_delete([key1, key2])
+        with self.assertRaises(CalledProcessError):
+            self.nvram_get(key1)
+        with self.assertRaises(CalledProcessError):
+            self.nvram_get(key2)    
 '''
 
             Mixed mode
@@ -238,14 +272,14 @@ class test_mixed_list(test_mixed_base):
             key = f'SYS_key{i}'
             val = f'val{i}'
             attributes[key] = val
-            self.nvram_set(key, val)
+            self.nvram_set([(key, val)])
             
         self.sys = False
         for i in range(10):
             key = f'key{i}'
             val = f'val{i}'
             attributes[key] = val
-            self.nvram_set(key, val)
+            self.nvram_set([(key, val)])
             
         d = self.nvram_list()
         self.assertEqual(d, attributes)
@@ -262,10 +296,10 @@ class test_mixed_delete(test_mixed_base):
         key1 = 'key1'
         val1 = 'val1'
         self.sys=True
-        self.nvram_set(sys_key1, sys_val1)
+        self.nvram_set([(sys_key1, sys_val1)])
         self.sys=False
-        self.nvram_set(key1, val1)
-        self.nvram_delete(key1)
+        self.nvram_set([(key1, val1)])
+        self.nvram_delete([key1])
         
         d = self.nvram_list()
         self.assertEqual(d, {sys_key1: sys_val1})
@@ -276,10 +310,10 @@ class test_mixed_delete(test_mixed_base):
         key1 = 'key1'
         val1 = 'val1'
         self.sys=False
-        self.nvram_set(key1, val1)
+        self.nvram_set([(key1, val1)])
         self.sys=True
-        self.nvram_set(sys_key1, sys_val1)
-        self.nvram_delete(sys_key1)
+        self.nvram_set([(sys_key1, sys_val1)])
+        self.nvram_delete([sys_key1])
         
         self.sys=False
         d = self.nvram_list()
@@ -307,7 +341,7 @@ class test_single_section(test_user_base):
             key = f'key{i}'
             val = f'val{i}'
             attributes[key] = val
-            self.nvram_set(key, val)
+            self.nvram_set([(key, val)])
         
         for key, value in attributes.items():
             read = self.nvram_get(key)
@@ -323,7 +357,7 @@ class test_single_section(test_user_base):
             key = f'key{i}'
             val = f'val{i}'
             attributes[key] = val
-            self.nvram_set(key, val)
+            self.nvram_set([(key, val)])
         
         for key, value in attributes.items():
             read = self.nvram_get(key)
