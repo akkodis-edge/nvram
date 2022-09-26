@@ -377,7 +377,7 @@ int main(int argc, char** argv)
 	}
 
 	for (int i = 1; i < argc; i++) {
-		if (!strcmp("--set", argv[i])) {
+		if (!strcmp("--set", argv[i]) || !strcmp("set", argv[i])) {
 			if (i + 2 >= argc) {
 				fprintf(stderr, "Too few arguments for command set\n");
 				return EINVAL;
@@ -393,7 +393,7 @@ int main(int argc, char** argv)
 			i += 2;
 		}
 		else
-		if (!strcmp("--get", argv[i])) {
+		if (!strcmp("--get", argv[i]) || !strcmp("get", argv[i])) {
 			if (++i >= argc) {
 				fprintf(stderr, "Too few arguments for command get\n");
 				return EINVAL;
@@ -407,7 +407,7 @@ int main(int argc, char** argv)
 			opts.op_count++;
 		}
 		else
-		if (!strcmp("--list", argv[i])) {
+		if (!strcmp("--list", argv[i]) || !strcmp("list", argv[i])) {
 			if (opts.op_count >= MAX_OP) {
 				fprintf(stderr, "Too many operations\n");
 				return EINVAL;
@@ -416,7 +416,7 @@ int main(int argc, char** argv)
 			opts.op_count++;
 		}
 		else
-		if(!strcmp("--del", argv[i])) {
+		if(!strcmp("--del", argv[i]) || !strcmp("delete", argv[i])) {
 			if (++i >= argc) {
 				fprintf(stderr, "Too few arguments for command delete\n");
 				return EINVAL;

@@ -135,6 +135,7 @@ class test_user_multi_set_delete(test_user_base):
             self.nvram_get(key1)
         with self.assertRaises(CalledProcessError):
             self.nvram_get(key2)
+
 '''
 
             SYSTEM mode (--sys)
@@ -365,6 +366,51 @@ class test_single_section(test_user_base):
             
         self.assertTrue(os.path.isfile(f'{self.dir}/user_b'))
         self.assertFalse(os.path.isfile(f'{self.dir}/user_a'))
+
+class test_legacy_api(test_user_base):
+    def nvram_legacy_set(self, pairs):
+        args = []
+        for key, val in pairs:
+            args.extend(['set', key, val])
+        nvram(self.env, args, sys=self.sys)
+        
+    def nvram_legacy_get(self, key):
+        return nvram(self.env, ['get', key], sys=self.sys).rstrip()
+    
+    def nvram_legacy_list(self):
+        stdout = nvram(self.env, ['list'], sys=self.sys)
+        return dict(pair.split("=") for pair in stdout.split())
+    
+    def nvram_legacy_delete(self, keys):
+        args = []
+        for key in keys:
+            args.extend(['delete', key])
+        nvram(self.env, args, sys=self.sys)
+    
+    def test_set_get(self):
+        key = 'key1'
+        val = 'val'
+        self.nvram_legacy_set([(key, val)])
+        self.assertEqual(val, self.nvram_legacy_get(key))
+
+    def test_set_list(self):
+        key1 = 'key1'
+        val1 = 'val1'
+        key2 = 'key2'
+        val2 = 'val2'
+        self.nvram_legacy_set([(key1, val1), (key2, val2)])
+        d = self.nvram_legacy_list()
+        self.assertEqual(d[key1], val1)
+        self.assertEqual(d[key2], val2)
+        
+    def test_set_delete(self):
+        key = 'key'
+        val = 'val'
+        self.nvram_legacy_set([(key, val)])
+        self.assertEqual(val, self.nvram_legacy_get(key))
+        self.nvram_legacy_delete([key])
+        with self.assertRaises(CalledProcessError):
+            self.nvram_legacy_get(key)
 
 if __name__ == '__main__':
     unittest.main()
