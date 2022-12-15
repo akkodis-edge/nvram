@@ -5,6 +5,7 @@ INSTALL_PATH ?= /usr/sbin
 NVRAM_INTERFACE_TYPE ?= file
 OBJS = log.o nvram.o main.o libnvram/libnvram.a
 
+NVRAM_ALLOW_ALL_PREFIXES ?= no
 NVRAM_SRC_VERSION := $(shell git describe --dirty --always --tags)
 ifeq ($(NVRAM_INTERFACE_TYPE), file)
 OBJS += nvram_interface_file.o
@@ -28,6 +29,10 @@ OBJS += nvram_interface_efi.o
 LDFLAGS += -le2p
 NVRAM_SYSTEM_A ?= /sys/firmware/efi/efivars/604dafe4-587a-47f6-8604-3d33eb83da3d-system
 NVRAM_USER_A ?= /sys/firmware/efi/efivars/604dafe4-587a-47f6-8604-3d33eb83da3d-user
+endif
+
+ifeq ($(NVRAM_ALLOW_ALL_PREFIXES), yes)
+CFLAGS += -DNVRAM_ALLOW_ALL_PREFIXES
 endif
 
 CFLAGS += -std=gnu11 -Wall -Wextra -Werror -pedantic

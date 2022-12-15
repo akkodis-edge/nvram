@@ -57,6 +57,7 @@ static int system_unlocked(void)
 	return 0;
 }
 
+#ifndef NVRAM_ALLOW_ALL_PREFIXES
 static int starts_with(const char* str, const char* prefix)
 {
 	size_t str_len = strlen(str);
@@ -68,7 +69,7 @@ static int starts_with(const char* str, const char* prefix)
 	}
 	return 0;
 }
-
+#endif
 static int acquire_lockfile(const char *path, int *fdlock)
 {
     int r = 0;
@@ -456,23 +457,24 @@ int main(int argc, char** argv)
 		pr_dbg("operation: %d, key: %s, val: %s\n",
 				opts.operations[i].op, opts.operations[i].key, opts.operations[i].value);
 		switch (opts.operations[i].op) {
-		case OP_SET:
-			if (opts.system_mode) {
-				if (!starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX)) {
-					pr_err("required prefix \"%s\" missing in system attribute\n", NVRAM_SYSTEM_PREFIX);
-					return EINVAL;
-				}
+        case OP_SET:
+            if (opts.system_mode) {
 				if (!system_unlocked()) {
-					pr_err("system write locked\n")
+					pr_err("system write locked\n");
 					return EACCES;
 				}
 			}
-			if (!opts.system_mode) {
-				if (starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX)) {
-					pr_err("forbidden prefix \"%s\" in user attribute\n", NVRAM_SYSTEM_PREFIX);
-					return EINVAL;
+#ifndef NVRAM_ALLOW_ALL_PREFIXES
+			if (!starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX)) {
+				if (opts.system_mode) {
+					pr_err("required prefix \"%s\" missing in system attribute\n", NVRAM_SYSTEM_PREFIX);
 				}
+				else {
+					pr_err("forbidden prefix \"%s\" in user attribute\n", NVRAM_SYSTEM_PREFIX);
+				}
+				return EINVAL;
 			}
+#endif
 			write_ops++;
 			break;
 		case OP_DEL:
