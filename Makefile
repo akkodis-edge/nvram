@@ -30,6 +30,15 @@ NVRAM_SYSTEM_A ?= /sys/firmware/efi/efivars/604dafe4-587a-47f6-8604-3d33eb83da3d
 NVRAM_USER_A ?= /sys/firmware/efi/efivars/604dafe4-587a-47f6-8604-3d33eb83da3d-user
 endif
 
+ifdef NVRAM_VALID_ATTRIBUTES
+CFLAGS += -DVALID_ATTRIBUTES=$(NVRAM_VALID_ATTRIBUTES)
+endif
+
+# When NVRAM_SYSTEM_PREFIX_DISABLE=1, there is no name restriction on system mode
+ifeq ($(NVRAM_SYSTEM_PREFIX_DISABLE), 1)
+CFLAGS += -DSYSTEM_PREFIX_DISABLE=$(NVRAM_SYSTEM_PREFIX_DISABLE)
+endif
+
 CFLAGS += -std=gnu11 -Wall -Wextra -Werror -pedantic
 CFLAGS += -DNVRAM_SYSTEM_A=$(NVRAM_SYSTEM_A)
 CFLAGS += -DNVRAM_SYSTEM_B=$(NVRAM_SYSTEM_B)
