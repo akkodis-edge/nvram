@@ -35,9 +35,7 @@ CFLAGS += -DVALID_ATTRIBUTES=$(NVRAM_VALID_ATTRIBUTES)
 endif
 
 # When NVRAM_SYSTEM_PREFIX_DISABLE=1, there is no name restriction on system mode
-ifeq ($(NVRAM_SYSTEM_PREFIX_DISABLE), 1)
 CFLAGS += -DSYSTEM_PREFIX_DISABLE=$(NVRAM_SYSTEM_PREFIX_DISABLE)
-endif
 
 CFLAGS += -std=gnu11 -Wall -Wextra -Werror -pedantic
 CFLAGS += -DNVRAM_SYSTEM_A=$(NVRAM_SYSTEM_A)

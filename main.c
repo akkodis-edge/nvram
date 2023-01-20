@@ -26,9 +26,6 @@
 #define NVRAM_ENV_SYSTEM_UNLOCK "NVRAM_SYSTEM_UNLOCK"
 #define NVRAM_SYSTEM_UNLOCK_MAGIC "16440"
 #define NVRAM_SYSTEM_PREFIX "SYS_"
-#define NVRAM_KEY_MAX_LENGTH 30
-#define NVRAM_VALUE_MAX_LENGTH 80
-#define NVRAM_INIT_LINE_MAX_LENGTH (NVRAM_KEY_MAX_LENGTH + NVRAM_VALUE_MAX_LENGTH)
 #define NVRAM_MAX_ATTRIBUTES 30
 
 #define MAX_OP 30
@@ -146,8 +143,8 @@ enum op {
 
 struct operation {
 	enum op op;
-	char key[NVRAM_KEY_MAX_LENGTH];
-	char value[NVRAM_VALUE_MAX_LENGTH];
+	char * key;
+	char * value;
 };
 
 struct opts {
@@ -170,7 +167,7 @@ static void print_usage(const char* progname)
 	printf("user_b:   %s\n", xstr(NVRAM_USER_B));
 	printf("\n");
 
-	printf("Configuration:\n");
+	printf("Program Configuration:\n");
 	printf("System Prefix check: %s\n", strcmp(xstr(SYSTEM_PREFIX_DISABLE), "1") ? "TRUE":"FALSE");
 	printf("Valid attributes: %s\n", xstr(VALID_ATTRIBUTES));
 	printf("\n");
@@ -398,37 +395,51 @@ int parse_config_file(struct opts * opts, char * filename) {
 	char file_path[100];
 	char * key;
 	char * value;
-
+	char * line = NULL;
+	size_t line_len;
+	ssize_t read;
 
 	if(!opts)
 		return EINVAL;
 
-	strcpy(file_path, NVRAM_CONFIG_FILE_PATH);
+	strncpy(file_path, NVRAM_CONFIG_FILE_PATH, sizeof(file_path));
 	strcat(file_path, filename);
-
-    char line[NVRAM_INIT_LINE_MAX_LENGTH];
 
     fp = fopen(file_path, "r");
 	if (fp == NULL)
         exit(EXIT_FAILURE);
 
-    while (fgets(line, NVRAM_INIT_LINE_MAX_LENGTH, fp) != NULL) {
-		key = opts->operations[opts->op_count].key;
-		value = opts->operations[opts->op_count].value;
+    while ((read = getline(&line, &line_len, fp)) != -1) {
+		key = (char *) malloc(line_len);
+		value = (char *) malloc(line_len);
+
 		if(sscanf(line, "%[^=]=%s", key, value) != 2)
 		{
+			free(key);
+			free(value);
 			continue;
 		}
 
 		if (opts->op_count >= MAX_OP) {
-				fprintf(stderr, "Too many operations\n");
-				return EINVAL;
+			fprintf(stderr, "Too many operations\n");
+			free(key);
+			free(value);
+			free(line);
+			return EINVAL;
 		}
 
 		opts->operations[opts->op_count].op = OP_SET;
+		opts->operations[opts->op_count].key = (char *) malloc(strlen(key) + 1);
+		opts->operations[opts->op_count].value = (char *) malloc(strlen(value) + 1);
+		strncpy(opts->operations[opts->op_count].key, key, strlen(key));
+		strncpy(opts->operations[opts->op_count].value, value, strlen(value));
+		printf("Parsed key: %s, value: %s\n",
+			   opts->operations[opts->op_count].key,
+			   opts->operations[opts->op_count].value);
 		opts->op_count++;
     }
 
+    free(line);
     fclose(fp);
     return 0;
 }
@@ -448,7 +459,7 @@ int validate_config_list( struct opts * opts, const char ** config_list, const i
 			}
 		}
 		if(!config_found) {
-			pr_err("ERROR: Config attribute %s not found\n", config_list[i]);
+			pr_err("Config attribute %s not found\n", config_list[i]);
 			return EINVAL;
 		}
 		// reset flag to check next required attribute
@@ -463,7 +474,7 @@ int main(int argc, char** argv)
 
 	struct opts opts;
 	char * config_param_list[NVRAM_MAX_ATTRIBUTES];
-	char valid_config_env[500];
+	char valid_config_env[sizeof(xstr(VALID_ATTRIBUTES))];
 	int validate_config = 0;
 	int valid_config_size = 0;
 	int system_prefix_enable = 1;
@@ -481,7 +492,7 @@ int main(int argc, char** argv)
 		pr_dbg("system_prefix_enable = 0\n");
 	}
 
-	strcpy(valid_config_env, xstr(VALID_ATTRIBUTES));
+	strncpy(valid_config_env, xstr(VALID_ATTRIBUTES), sizeof(valid_config_env));
     if (strcmp(valid_config_env, "VALID_ATTRIBUTES")) {
 		validate_config = 1;
 		parse_valid_config(config_param_list, valid_config_env, &valid_config_size);
@@ -491,15 +502,19 @@ int main(int argc, char** argv)
 		if (!strcmp("--set", argv[i]) || !strcmp("set", argv[i])) {
 			if (i + 2 >= argc) {
 				fprintf(stderr, "Too few arguments for command set\n");
-				return EINVAL;
+				r = EINVAL;
+				goto free_and_exit;
 			}
 			if (opts.op_count >= MAX_OP) {
 				fprintf(stderr, "Too many operations\n");
-				return EINVAL;
+				r = EINVAL;
+				goto free_and_exit;
 			}
 			opts.operations[opts.op_count].op = OP_SET;
-			strcpy(opts.operations[opts.op_count].key, argv[i + 1]);
-			strcpy(opts.operations[opts.op_count].value, argv[i + 2]);
+			opts.operations[opts.op_count].key = (char *) malloc(strlen(argv[i + 1]) + 1);
+			opts.operations[opts.op_count].value = (char *) malloc(strlen(argv[i + 2]) + 1);
+			strncpy(opts.operations[opts.op_count].key, argv[i + 1], strlen(argv[i + 1]));
+			strncpy(opts.operations[opts.op_count].value, argv[i + 2], strlen(argv[i + 2]));
 			opts.op_count++;
 			i += 2;
 		}
@@ -507,21 +522,26 @@ int main(int argc, char** argv)
 		if (!strcmp("--get", argv[i]) || !strcmp("get", argv[i])) {
 			if (++i >= argc) {
 				fprintf(stderr, "Too few arguments for command get\n");
-				return EINVAL;
+				r = EINVAL;
+				goto free_and_exit;
 			}
 			if (opts.op_count >= MAX_OP) {
 				fprintf(stderr, "Too many operations\n");
-				return EINVAL;
+				r = EINVAL;
+				goto free_and_exit;
 			}
 			opts.operations[opts.op_count].op = OP_GET;
-			strcpy(opts.operations[opts.op_count].key, argv[i]);
+			opts.operations[opts.op_count].key = (char *) malloc(strlen(argv[i]) + 1);
+			strncpy(opts.operations[opts.op_count].key, argv[i], strlen(argv[i]));
+			
 			opts.op_count++;
 		}
 		else
 		if (!strcmp("--list", argv[i]) || !strcmp("list", argv[i])) {
 			if (opts.op_count >= MAX_OP) {
 				fprintf(stderr, "Too many operations\n");
-				return EINVAL;
+				r = EINVAL;
+				goto free_and_exit;
 			}
 			opts.operations[opts.op_count].op = OP_LIST;
 			opts.op_count++;
@@ -530,27 +550,32 @@ int main(int argc, char** argv)
 		if(!strcmp("--del", argv[i]) || !strcmp("delete", argv[i])) {
 			if (++i >= argc) {
 				fprintf(stderr, "Too few arguments for command delete\n");
-				return EINVAL;
+				r = EINVAL;
+				goto free_and_exit;
 			}
 			if (opts.op_count >= MAX_OP) {
 				fprintf(stderr, "Too many operations\n");
-				return EINVAL;
+				r = EINVAL;
+				goto free_and_exit;
 			}
 			opts.operations[opts.op_count].op = OP_DEL;
-			strcpy(opts.operations[opts.op_count].key, argv[i]);
+			opts.operations[opts.op_count].key = (char *) malloc(strlen(argv[i]) + 1);
+			strncpy(opts.operations[opts.op_count].key, argv[i], strlen(argv[i]));
 			opts.op_count++;
 		}
 		else
 		if (!strcmp("--init", argv[i]) || !strcmp("init", argv[i])) {
 			if (i + 2 >= argc) {
 				fprintf(stderr, "Too few arguments for command init\n");
-				return EINVAL;
+				r = EINVAL;
+				goto free_and_exit;
 			}
 
 			parse_config_file(&opts, argv[i + 2]);
 			if(validate_config && validate_config_list(&opts, (const char**)config_param_list, valid_config_size))
 			{
-				return EINVAL;
+				r = EINVAL;
+				goto free_and_exit;
 			}
 			i += 2;
 		}
@@ -561,11 +586,13 @@ int main(int argc, char** argv)
 		else
 		if (!strcmp("-h", argv[i]) || !strcmp("--help", argv[i])) {
 			print_usage(NVRAM_PROGRAM_NAME);
-			return 1;
+			r = 1;
+			goto free_and_exit;
 		}
 		else {
 			fprintf(stderr, "unknown argument: %s\n", argv[i]);
-			return 1;
+			r = 1;
+			goto free_and_exit;
 		}
 	}
 
@@ -585,25 +612,29 @@ int main(int argc, char** argv)
 			if (opts.system_mode) {
 				if (!system_unlocked()) {
 						pr_err("system write locked\n")
-						return EACCES;
+						r = EACCES;
+						goto free_and_exit;
 				}
 				if(system_prefix_enable &&
 				   !starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX)) {
 					pr_err("Invalid key name prefix: %s\n", opts.operations[i].key);
-					return EINVAL;
+					r = EACCES;
+					goto free_and_exit;
 				 }
 			}
 			else if(system_prefix_enable &&
 				starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX)) {
 				pr_err("Invalid key name prefix in user attribute: %s\n", opts.operations[i].key);
-				return EINVAL;
+				r = EINVAL;
+				goto free_and_exit;
 			}
 			write_ops++;
 			break;
 		case OP_DEL:
 			if (opts.system_mode && !system_unlocked()) {
 				pr_err("system write locked\n")
-				return EACCES;
+				r = EACCES;
+				goto free_and_exit;
 			}
 			write_ops++;
 			break;
@@ -615,11 +646,13 @@ int main(int argc, char** argv)
 	}
 	if (read_ops > 0 && write_ops > 0) {
 		pr_err("can't mix read and write operations\n");
-		return EINVAL;
+		r = EINVAL;
+		goto free_and_exit;
 	}
 	if (read_ops > 1) {
 		pr_err("maximum single read operation supported\n");
-		return EINVAL;
+		r = EINVAL;
+		goto free_and_exit;
 	}
 
 	struct nvram *nvram_system = NULL;
@@ -740,5 +773,14 @@ exit:
 	}
 	nvram_close(&nvram_system);
 	nvram_close(&nvram_user);
+
+free_and_exit:
+	for (int i = 0; i < opts.op_count; ++i) {
+		if(opts.operations[opts.op_count].key)
+			free(opts.operations[opts.op_count].key);
+		if(opts.operations[opts.op_count].value)
+			free(opts.operations[opts.op_count].value);
+	}
+
 	return -r;
 }
