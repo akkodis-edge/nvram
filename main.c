@@ -168,7 +168,7 @@ static void print_usage(const char* progname)
 	printf("\n");
 
 	printf("Program Configuration:\n");
-	printf("System Prefix check: %s\n", strcmp(xstr(SYSTEM_PREFIX_DISABLE), "1") ? "TRUE":"FALSE");
+	printf("System Allow All Prefixes: %s\n", strcmp(xstr(NVRAM_ALLOW_ALL_PREFIXES), "yes") ? "yes":"no");
 	printf("Valid attributes: %s\n", xstr(VALID_ATTRIBUTES));
 	printf("\n");
 
@@ -487,7 +487,7 @@ int main(int argc, char** argv)
 		enable_debug();
 	}
 
-	if (!strcmp(xstr(SYSTEM_PREFIX_DISABLE), "1")) {
+	if (!strcmp(xstr(NVRAM_ALLOW_ALL_PREFIXES), "yes")) {
 		system_prefix_enable = 0;
 		pr_dbg("system_prefix_enable = 0\n");
 	}
