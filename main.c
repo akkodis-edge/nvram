@@ -17,6 +17,7 @@
 
 #define NVRAM_PROGRAM_NAME "nvram"
 #define NVRAM_LOCKFILE "/run/lock/nvram.lock"
+#define NVRAM_CONFIG_FILE_PATH "/etc/"
 #define NVRAM_ENV_DEBUG "NVRAM_DEBUG"
 #define NVRAM_ENV_USER_A "NVRAM_USER_A"
 #define NVRAM_ENV_USER_B "NVRAM_USER_B"
@@ -25,6 +26,9 @@
 #define NVRAM_ENV_SYSTEM_UNLOCK "NVRAM_SYSTEM_UNLOCK"
 #define NVRAM_SYSTEM_UNLOCK_MAGIC "16440"
 #define NVRAM_SYSTEM_PREFIX "SYS_"
+#define NVRAM_MAX_ATTRIBUTES 30
+
+#define MAX_OP 30
 
 static int FDLOCK = 0;
 
@@ -140,11 +144,10 @@ enum op {
 
 struct operation {
 	enum op op;
-	char* key;
-	char* value;
+	char * key;
+	char * value;
 };
 
-#define MAX_OP 10
 struct opts {
 	int system_mode;
 	int op_count;
@@ -165,6 +168,13 @@ static void print_usage(const char* progname)
 	printf("user_b:   %s\n", xstr(NVRAM_USER_B));
 	printf("\n");
 
+	printf("Program Configuration:\n");
+#ifdef NVRAM_ALLOW_ALL_PREFIXES
+	printf("System Allow All Prefixes: ENABLED\n");
+#endif
+	printf("Valid attributes: %s\n", xstr(VALID_ATTRIBUTES));
+	printf("\n");
+
 	printf("Usage:   %s [OPTION] [COMMAND] [KEY] [VALUE]\n", progname);
 	printf("Example: %s set keyname value\n", progname);
 	printf("Defaults to COMMAND list if none set\n");
@@ -179,6 +189,8 @@ static void print_usage(const char* progname)
 	printf("  --get       Read attribute. Requires KEY\n");
 	printf("  --del       Delete attributes. Requires KEY\n");
 	printf("  --list      Lists attributes\n");
+	printf("  --init      Initializes attributes read from a file located at /sys partition.\n");
+	printf("              Requires KEY and VALUE. E.g.: nvram --init FILE config_file\n");
 	printf("\n");
 
 	printf("Return values:\n");
@@ -365,10 +377,107 @@ static int add_list_entry(const char* list_name, struct libnvram_list** list, co
 	return 1;
 }
 
+// Parses list of valid config attribute names
+int parse_valid_config(char ** attributes, char * list, int * list_size)
+{
+    int i = 0;
+    char * token = strtok(list, ":");
+
+    while( token != NULL ) {
+        attributes[i++] = token;
+        token = strtok(NULL, ":");
+    }
+    *list_size = i;
+
+    return 0;
+}
+
+// Parses configuration file used with INIT command
+int parse_config_file(struct opts * opts, char * filename) {
+    FILE *fp;
+	char file_path[100];
+	char * key;
+	char * value;
+	char * line = NULL;
+	size_t line_len;
+	ssize_t read;
+
+	if(!opts)
+		return EINVAL;
+
+	strncpy(file_path, NVRAM_CONFIG_FILE_PATH, sizeof(file_path));
+	strcat(file_path, filename);
+
+    fp = fopen(file_path, "r");
+	if (fp == NULL)
+        exit(EXIT_FAILURE);
+
+    while ((read = getline(&line, &line_len, fp)) != -1) {
+		key = (char *) malloc(line_len);
+		value = (char *) malloc(line_len);
+
+		if(sscanf(line, "%[^=]=%s", key, value) != 2)
+		{
+			free(key);
+			free(value);
+			continue;
+		}
+
+		if (opts->op_count >= MAX_OP) {
+			fprintf(stderr, "Too many operations\n");
+			free(key);
+			free(value);
+			free(line);
+			return EINVAL;
+		}
+
+		opts->operations[opts->op_count].op = OP_SET;
+		opts->operations[opts->op_count].key = (char *) malloc(strlen(key) + 1);
+		opts->operations[opts->op_count].value = (char *) malloc(strlen(value) + 1);
+		strncpy(opts->operations[opts->op_count].key, key, strlen(key));
+		strncpy(opts->operations[opts->op_count].value, value, strlen(value));
+		opts->op_count++;
+    }
+
+    free(line);
+    fclose(fp);
+    return 0;
+}
+
+// Check that all the valid attributes are added from INIT command
+int validate_config_list( struct opts * opts, const char ** config_list, const int list_size)
+{
+	int config_found = 0;
+
+	for (int i=0; i < list_size; i++ )
+	{
+		for (int j=0; j < opts->op_count; j++)
+		{
+			if(!strcmp(config_list[i], opts->operations[j].key)) {
+				config_found = 1;
+				break;
+			}
+		}
+		if(!config_found) {
+			pr_err("Config attribute %s not found\n", config_list[i]);
+			return EINVAL;
+		}
+		// reset flag to check next required attribute
+		config_found = 0; 
+	}
+
+	return 0;
+}
+
 int main(int argc, char** argv)
 {
 
 	struct opts opts;
+	char * config_param_list[NVRAM_MAX_ATTRIBUTES];
+	char valid_config_env[sizeof(xstr(VALID_ATTRIBUTES))];
+	int validate_config = 0;
+	int valid_config_size = 0;
+
 	memset(&opts, 0, sizeof(opts));
 
 	int r = 0;
@@ -377,19 +486,29 @@ int main(int argc, char** argv)
 		enable_debug();
 	}
 
+	strncpy(valid_config_env, xstr(VALID_ATTRIBUTES), sizeof(valid_config_env));
+    if (strcmp(valid_config_env, "VALID_ATTRIBUTES")) {
+		validate_config = 1;
+		parse_valid_config(config_param_list, valid_config_env, &valid_config_size);
+    }
+
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp("--set", argv[i]) || !strcmp("set", argv[i])) {
 			if (i + 2 >= argc) {
 				fprintf(stderr, "Too few arguments for command set\n");
-				return EINVAL;
+				r = EINVAL;
+				goto free_and_exit;
 			}
 			if (opts.op_count >= MAX_OP) {
 				fprintf(stderr, "Too many operations\n");
-				return EINVAL;
+				r = EINVAL;
+				goto free_and_exit;
 			}
 			opts.operations[opts.op_count].op = OP_SET;
-			opts.operations[opts.op_count].key = argv[i + 1];
-			opts.operations[opts.op_count].value = argv[i + 2];
+			opts.operations[opts.op_count].key = (char *) malloc(strlen(argv[i + 1]) + 1);
+			opts.operations[opts.op_count].value = (char *) malloc(strlen(argv[i + 2]) + 1);
+			strncpy(opts.operations[opts.op_count].key, argv[i + 1], strlen(argv[i + 1]));
+			strncpy(opts.operations[opts.op_count].value, argv[i + 2], strlen(argv[i + 2]));
 			opts.op_count++;
 			i += 2;
 		}
@@ -397,21 +516,26 @@ int main(int argc, char** argv)
 		if (!strcmp("--get", argv[i]) || !strcmp("get", argv[i])) {
 			if (++i >= argc) {
 				fprintf(stderr, "Too few arguments for command get\n");
-				return EINVAL;
+				r = EINVAL;
+				goto free_and_exit;
 			}
 			if (opts.op_count >= MAX_OP) {
 				fprintf(stderr, "Too many operations\n");
-				return EINVAL;
+				r = EINVAL;
+				goto free_and_exit;
 			}
 			opts.operations[opts.op_count].op = OP_GET;
-			opts.operations[opts.op_count].key = argv[i];
+			opts.operations[opts.op_count].key = (char *) malloc(strlen(argv[i]) + 1);
+			strncpy(opts.operations[opts.op_count].key, argv[i], strlen(argv[i]));
+			
 			opts.op_count++;
 		}
 		else
 		if (!strcmp("--list", argv[i]) || !strcmp("list", argv[i])) {
 			if (opts.op_count >= MAX_OP) {
 				fprintf(stderr, "Too many operations\n");
-				return EINVAL;
+				r = EINVAL;
+				goto free_and_exit;
 			}
 			opts.operations[opts.op_count].op = OP_LIST;
 			opts.op_count++;
@@ -420,15 +544,34 @@ int main(int argc, char** argv)
 		if(!strcmp("--del", argv[i]) || !strcmp("delete", argv[i])) {
 			if (++i >= argc) {
 				fprintf(stderr, "Too few arguments for command delete\n");
-				return EINVAL;
+				r = EINVAL;
+				goto free_and_exit;
 			}
 			if (opts.op_count >= MAX_OP) {
 				fprintf(stderr, "Too many operations\n");
-				return EINVAL;
+				r = EINVAL;
+				goto free_and_exit;
 			}
 			opts.operations[opts.op_count].op = OP_DEL;
-			opts.operations[opts.op_count].key = argv[i];
+			opts.operations[opts.op_count].key = (char *) malloc(strlen(argv[i]) + 1);
+			strncpy(opts.operations[opts.op_count].key, argv[i], strlen(argv[i]));
 			opts.op_count++;
+		}
+		else
+		if (!strcmp("--init", argv[i]) || !strcmp("init", argv[i])) {
+			if (i + 2 >= argc) {
+				fprintf(stderr, "Too few arguments for command init\n");
+				r = EINVAL;
+				goto free_and_exit;
+			}
+
+			parse_config_file(&opts, argv[i + 2]);
+			if(validate_config && validate_config_list(&opts, (const char**)config_param_list, valid_config_size))
+			{
+				r = EINVAL;
+				goto free_and_exit;
+			}
+			i += 2;
 		}
 		else
 		if (!strcmp("--sys", argv[i])) {
@@ -437,11 +580,13 @@ int main(int argc, char** argv)
 		else
 		if (!strcmp("-h", argv[i]) || !strcmp("--help", argv[i])) {
 			print_usage(NVRAM_PROGRAM_NAME);
-			return 1;
+			r = 1;
+			goto free_and_exit;
 		}
 		else {
 			fprintf(stderr, "unknown argument: %s\n", argv[i]);
-			return 1;
+			r = 1;
+			goto free_and_exit;
 		}
 	}
 
@@ -460,8 +605,9 @@ int main(int argc, char** argv)
         case OP_SET:
             if (opts.system_mode) {
 				if (!system_unlocked()) {
-					pr_err("system write locked\n");
-					return EACCES;
+					pr_err("system write locked\n")
+					r = EACCES;
+					goto free_and_exit;
 				}
 			}
 #ifndef NVRAM_ALLOW_ALL_PREFIXES
@@ -472,7 +618,8 @@ int main(int argc, char** argv)
 				else {
 					pr_err("forbidden prefix \"%s\" in user attribute\n", NVRAM_SYSTEM_PREFIX);
 				}
-				return EINVAL;
+				r = EINVAL;
+				goto free_and_exit;
 			}
 #endif
 			write_ops++;
@@ -480,7 +627,8 @@ int main(int argc, char** argv)
 		case OP_DEL:
 			if (opts.system_mode && !system_unlocked()) {
 				pr_err("system write locked\n")
-				return EACCES;
+				r = EACCES;
+				goto free_and_exit;
 			}
 			write_ops++;
 			break;
@@ -492,11 +640,13 @@ int main(int argc, char** argv)
 	}
 	if (read_ops > 0 && write_ops > 0) {
 		pr_err("can't mix read and write operations\n");
-		return EINVAL;
+		r = EINVAL;
+		goto free_and_exit;
 	}
 	if (read_ops > 1) {
 		pr_err("maximum single read operation supported\n");
-		return EINVAL;
+		r = EINVAL;
+		goto free_and_exit;
 	}
 
 	struct nvram *nvram_system = NULL;
@@ -518,18 +668,19 @@ int main(int argc, char** argv)
 	if (r) {
 		goto exit;
 	}
-	if (!opts.system_mode) {
-		const char *nvram_user_a = get_env_str(NVRAM_ENV_USER_A, xstr(NVRAM_USER_A));
-		const char *nvram_user_b = get_env_str(NVRAM_ENV_USER_B, xstr(NVRAM_USER_B));
-		pr_dbg("NVRAM_USER_A: %s\n", nvram_user_a);
-		pr_dbg("NVRAM_USER_B: %s\n", nvram_user_b);
-		r = nvram_init(&nvram_user, &list_user, nvram_user_a, nvram_user_b);
-		if (r) {
-			goto exit;
-		}
+	
+	const char *nvram_user_a = get_env_str(NVRAM_ENV_USER_A, xstr(NVRAM_USER_A));
+	const char *nvram_user_b = get_env_str(NVRAM_ENV_USER_B, xstr(NVRAM_USER_B));
+	pr_dbg("NVRAM_USER_A: %s\n", nvram_user_a);
+	pr_dbg("NVRAM_USER_B: %s\n", nvram_user_b);
+	r = nvram_init(&nvram_user, &list_user, nvram_user_a, nvram_user_b);
+	if (r) {
+		goto exit;
 	}
 
-	int write_performed = 0;
+	int user_write_performed = 0;
+	int system_write_performed = 0;
+
 	if (opts.operations[0].op == OP_LIST) {
 		print_list("system", list_system);
 		if (!opts.system_mode) {
@@ -552,25 +703,51 @@ int main(int argc, char** argv)
 		for (int i = 0; i < opts.op_count; ++i) {
 			if (opts.operations[i].op == OP_SET) {
 				pr_dbg("HEre: %d: op_count: %d\n", i, opts.op_count);
-				r = add_list_entry(opts.system_mode ? "system" : "user", opts.system_mode ? &list_system : &list_user, opts.operations[i].key, opts.operations[i].value);
+				if(opts.system_mode) {
+					r = add_list_entry("system", &list_system, opts.operations[i].key, opts.operations[i].value);
+					if (r == 1) {
+						pr_dbg("written\n");
+						system_write_performed = 1;
+					}
+				}
+				else {
+					r = add_list_entry("user", &list_user, opts.operations[i].key, opts.operations[i].value);
+					if (r == 1) {
+						pr_dbg("written\n");
+						user_write_performed = 1;
+					}
+				}
+				
 				if (r < 0)
 					goto exit;
-				if (r == 1) {
-					pr_dbg("written\n");
-					write_performed = 1;
-				}
 			}
+
 			if (opts.operations[i].op == OP_DEL) {
-				pr_dbg("deleting %s: %s\n", opts.system_mode ? "system" : "user", opts.operations[i].key);
-				if(libnvram_list_remove(opts.system_mode ? &list_system : &list_user, (uint8_t*) opts.operations[i].key, strlen(opts.operations[i].key) + 1))
-					write_performed = 1;
+				if(opts.system_mode) {
+					pr_dbg("deleting %s: %s\n", "system", opts.operations[i].key);
+					if(libnvram_list_remove(&list_system, (uint8_t*) opts.operations[i].key, strlen(opts.operations[i].key) + 1))
+						system_write_performed = 1;
+				}
+				else {
+					pr_dbg("deleting %s: %s\n", "user", opts.operations[i].key);
+					if(libnvram_list_remove(&list_user, (uint8_t*) opts.operations[i].key, strlen(opts.operations[i].key) + 1))
+						user_write_performed = 1;
+				}
 			}
 		}
 	}
 
-	if (write_performed) {
-		pr_dbg("Commit changes\n");
-		r = nvram_commit(opts.system_mode ? nvram_system : nvram_user, opts.system_mode ? list_system : list_user);
+	if (user_write_performed) {
+		pr_dbg("Commit User changes\n");
+		r = nvram_commit(nvram_user, list_user);
+		if (r) {
+			goto exit;
+		}
+	}
+
+	if (system_write_performed) {
+		pr_dbg("Commit System changes\n");
+		r = nvram_commit(nvram_system, list_system);
 		if (r) {
 			goto exit;
 		}
@@ -588,5 +765,14 @@ exit:
 	}
 	nvram_close(&nvram_system);
 	nvram_close(&nvram_user);
+
+free_and_exit:
+	for (int i = 0; i < opts.op_count; ++i) {
+		if(opts.operations[opts.op_count].key)
+			free(opts.operations[opts.op_count].key);
+		if(opts.operations[opts.op_count].value)
+			free(opts.operations[opts.op_count].value);
+	}
+
 	return -r;
 }
