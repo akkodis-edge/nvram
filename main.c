@@ -611,13 +611,16 @@ int main(int argc, char** argv)
 				}
 			}
 #ifndef NVRAM_ALLOW_ALL_PREFIXES
-			if (!starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX)) {
-				if (opts.system_mode) {
-					pr_err("required prefix \"%s\" missing in system attribute\n", NVRAM_SYSTEM_PREFIX);
-				}
-				else {
-					pr_err("forbidden prefix \"%s\" in user attribute\n", NVRAM_SYSTEM_PREFIX);
-				}
+			if (!starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX) &&
+			    opts.system_mode) {
+				pr_err("required prefix \"%s\" missing in system attribute\n", NVRAM_SYSTEM_PREFIX);
+				r = EINVAL;
+				goto free_and_exit;
+			}
+			else 
+			if (starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX) &&
+			    !opts.system_mode) {
+				pr_err("forbidden prefix \"%s\" in user attribute\n", NVRAM_SYSTEM_PREFIX);
 				r = EINVAL;
 				goto free_and_exit;
 			}
