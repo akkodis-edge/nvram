@@ -634,12 +634,12 @@ int main(int argc, char** argv)
 					r = EINVAL;
 					goto free_and_exit;
 				}
-				if (starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX) &&
-					!opts.system_mode) {
-					pr_err("forbidden prefix \"%s\" in user attribute\n", NVRAM_SYSTEM_PREFIX);
-					r = EINVAL;
-					goto free_and_exit;
-				}
+			}
+			if (starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX) &&
+				!opts.system_mode) {
+				pr_err("forbidden prefix \"%s\" in user attribute\n", NVRAM_SYSTEM_PREFIX);
+				r = EINVAL;
+				goto free_and_exit;
 			}
 			write_ops++;
 			break;

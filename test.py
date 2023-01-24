@@ -95,6 +95,13 @@ class test_user_set_get(test_user_base):
         with self.assertRaises(CalledProcessError):
             self.nvram_set([(key, val)])
 
+    def test_with_prefix_allow(self):
+        key = 'SYS_key1'
+        val = 'val1'
+        self.env['NVRAM_ALLOW_ALL_PREFIXES'] = 'yes'
+        with self.assertRaises(CalledProcessError):
+            self.nvram_set([(key, val)])
+
 class test_user_list(test_user_base):
     def test_list(self):
         attributes = {}
