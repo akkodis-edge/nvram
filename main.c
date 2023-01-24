@@ -443,6 +443,8 @@ int parse_config_file(struct opts * opts, char * filename) {
 		opts->operations[opts->op_count].value = (char *) malloc(strlen(value) + 1);
 		strncpy(opts->operations[opts->op_count].key, key, strlen(key));
 		strncpy(opts->operations[opts->op_count].value, value, strlen(value));
+		free(key);
+		free(value);
 		opts->op_count++;
     }
 
@@ -482,6 +484,7 @@ int main(int argc, char** argv)
 	struct opts opts;
 	char * config_param_list[NVRAM_MAX_ATTRIBUTES];
 	char * valid_attributes_list;
+	char * valid_attributes_ptr = NULL;
 	int validate_config = 0;
 	int valid_config_size = 0;
 	int allow_all_prefixes = 0;
@@ -504,6 +507,7 @@ int main(int argc, char** argv)
     if (strcmp(valid_attributes_env, "none")) {
 		validate_config = 1;
 		valid_attributes_list = malloc(strlen(valid_attributes_env)+1);
+		valid_attributes_ptr = valid_attributes_list; // save original ptr to be able to free later
 		strncpy(valid_attributes_list, valid_attributes_env, strlen(valid_attributes_env));
 		parse_valid_config(config_param_list, valid_attributes_list, &valid_config_size);
     }
@@ -786,6 +790,10 @@ exit:
 	nvram_close(&nvram_user);
 
 free_and_exit:
+
+	if(valid_attributes_ptr)
+		free(valid_attributes_ptr);
+
 	for (int i = 0; i < opts.op_count; ++i) {
 		if(opts.operations[opts.op_count].key)
 			free(opts.operations[opts.op_count].key);
