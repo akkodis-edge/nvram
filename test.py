@@ -28,6 +28,8 @@ class test_user_base(unittest.TestCase):
                 'NVRAM_SYSTEM_B': f'{self.dir}/system_b',
                 'NVRAM_USER_A': f'{self.dir}/user_a',
                 'NVRAM_USER_B': f'{self.dir}/user_b',
+                'NVRAM_ALLOW_ALL_PREFIXES' : 'no',
+                'NVRAM_CONFIG_FILE_PATH': f'{self.dir}',
             }
         self.sys = False
     
@@ -411,6 +413,93 @@ class test_legacy_api(test_user_base):
         self.nvram_legacy_delete([key])
         with self.assertRaises(CalledProcessError):
             self.nvram_legacy_get(key)
+
+class test_init(test_system_base):
+    def nvram_init(self, pairs):
+        args = []
+        for key, val in pairs:
+            args.extend(['--init', key, val])
+        nvram(self.env, args, sys=self.sys)
+        
+    def test_init_sys(self):
+        key = 'FILE'
+        val = 'nvram_init_test'
+        attributes = {}
+
+        f= open('%s%s' % (self.dir, val),"w+")
+        f.write("SYS_PRODUCT_ID=20-19602\n")
+        f.write("SYS_PRODUCT_DATE=20221107\n")
+        f.close()
+
+        self.nvram_init([(key, val)])
+        
+        attributes['SYS_PRODUCT_ID'] = '20-19602'
+        attributes['SYS_PRODUCT_DATE'] = '20221107'
+        d = self.nvram_list()
+        self.assertEqual(d, attributes)
+
+    def test_init_without_prefix(self):
+        key = 'FILE'
+        val = 'nvram_init_test'
+
+        f= open('%s%s' % (self.dir, val),"w+")
+        f.write("LM_PRODUCT_ID=20-19602\n")
+        f.write("LM_PRODUCT_DATE=20221107\n")
+        f.close()
+
+        with self.assertRaises(CalledProcessError):
+            self.nvram_init([(key, val)])
+
+    def test_init_prefix_allow(self):
+        key = 'FILE'
+        val = 'nvram_init_test'
+        self.env['NVRAM_ALLOW_ALL_PREFIXES'] = 'yes'
+        attributes = {}
+
+        f= open('%s%s' % (self.dir, val),"w+")
+        f.write("LM_PRODUCT_ID=20-19602\n")
+        f.write("LM_PRODUCT_DATE=20221107\n")
+        f.close()
+
+        self.nvram_init([(key, val)])
+        
+        attributes['LM_PRODUCT_ID'] = '20-19602'
+        attributes['LM_PRODUCT_DATE'] = '20221107'
+        d = self.nvram_list()
+        self.assertEqual(d, attributes)
+
+    def test_init_prefix_allow_valid_config(self):
+        key = 'FILE'
+        val = 'nvram_init_test'
+        self.env['NVRAM_ALLOW_ALL_PREFIXES'] = 'yes'
+        self.env['NVRAM_VALID_ATTRIBUTES'] = 'LM_PRODUCT_ID:LM_PRODUCT_DATE'
+        attributes = {}
+
+        f= open('%s%s' % (self.dir, val),"w+")
+        f.write("LM_PRODUCT_ID=20-19602\n")
+        f.write("LM_PRODUCT_DATE=20221107\n")
+        f.close()
+
+        self.nvram_init([(key, val)])
+        
+        attributes['LM_PRODUCT_ID'] = '20-19602'
+        attributes['LM_PRODUCT_DATE'] = '20221107'
+        d = self.nvram_list()
+        self.assertEqual(d, attributes)
+
+    def test_init_prefix_allow_invalid_config(self):
+        key = 'FILE'
+        val = 'nvram_init_test'
+        self.env['NVRAM_ALLOW_ALL_PREFIXES'] = 'yes'
+        self.env['NVRAM_VALID_ATTRIBUTES'] = 'SYS_PRODUCT_ID:SYS_PRODUCT_DATE'
+
+        f= open('%s%s' % (self.dir, val),"w+")
+        f.write("LM_PRODUCT_ID=20-19602\n")
+        f.write("LM_PRODUCT_DATE=20221107\n")
+        f.close()
+
+        with self.assertRaises(CalledProcessError):
+            self.nvram_init([(key, val)])
 
 if __name__ == '__main__':
     unittest.main()

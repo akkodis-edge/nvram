@@ -17,13 +17,15 @@
 
 #define NVRAM_PROGRAM_NAME "nvram"
 #define NVRAM_LOCKFILE "/run/lock/nvram.lock"
-#define NVRAM_CONFIG_FILE_PATH "/etc/"
+#define NVRAM_ENV_CONFIG_FILE_PATH "NVRAM_CONFIG_FILE_PATH"
 #define NVRAM_ENV_DEBUG "NVRAM_DEBUG"
 #define NVRAM_ENV_USER_A "NVRAM_USER_A"
 #define NVRAM_ENV_USER_B "NVRAM_USER_B"
 #define NVRAM_ENV_SYSTEM_A "NVRAM_SYSTEM_A"
 #define NVRAM_ENV_SYSTEM_B "NVRAM_SYSTEM_B"
 #define NVRAM_ENV_SYSTEM_UNLOCK "NVRAM_SYSTEM_UNLOCK"
+#define NVRAM_ENV_ALLOW_ALL_PREFIXES "NVRAM_ALLOW_ALL_PREFIXES"
+#define NVRAM_ENV_VALID_ATTRIBUTES "NVRAM_VALID_ATTRIBUTES"
 #define NVRAM_SYSTEM_UNLOCK_MAGIC "16440"
 #define NVRAM_SYSTEM_PREFIX "SYS_"
 #define NVRAM_MAX_ATTRIBUTES 30
@@ -61,7 +63,6 @@ static int system_unlocked(void)
 	return 0;
 }
 
-#ifndef NVRAM_ALLOW_ALL_PREFIXES
 static int starts_with(const char* str, const char* prefix)
 {
 	size_t str_len = strlen(str);
@@ -73,7 +74,7 @@ static int starts_with(const char* str, const char* prefix)
 	}
 	return 0;
 }
-#endif
+
 static int acquire_lockfile(const char *path, int *fdlock)
 {
     int r = 0;
@@ -169,9 +170,7 @@ static void print_usage(const char* progname)
 	printf("\n");
 
 	printf("Program Configuration:\n");
-#ifdef NVRAM_ALLOW_ALL_PREFIXES
-	printf("System Allow All Prefixes: ENABLED\n");
-#endif
+	printf("System Allow All Prefixes: %s\n", xstr(NVRAM_ALLOW_ALL_PREFIXES));
 	printf("Valid attributes: %s\n", xstr(VALID_ATTRIBUTES));
 	printf("\n");
 
@@ -405,12 +404,20 @@ int parse_config_file(struct opts * opts, char * filename) {
 	if(!opts)
 		return EINVAL;
 
-	strncpy(file_path, NVRAM_CONFIG_FILE_PATH, sizeof(file_path));
+    const char * config_file_path = get_env_str(NVRAM_ENV_CONFIG_FILE_PATH, xstr(NVRAM_CONFIG_FILE_PATH));
+    if (strcmp(xstr(NVRAM_CONFIG_FILE_PATH), NVRAM_ENV_CONFIG_FILE_PATH)) {
+		strncpy(file_path, config_file_path, sizeof(file_path));
+	}
+
 	strcat(file_path, filename);
 
     fp = fopen(file_path, "r");
 	if (fp == NULL)
-        exit(EXIT_FAILURE);
+	{
+		fprintf(stderr, "File %s not found\n", file_path);
+		exit(EXIT_FAILURE);
+
+	}
 
     while ((read = getline(&line, &line_len, fp)) != -1) {
 		key = (char *) malloc(line_len);
@@ -474,9 +481,10 @@ int main(int argc, char** argv)
 
 	struct opts opts;
 	char * config_param_list[NVRAM_MAX_ATTRIBUTES];
-	char valid_config_env[sizeof(xstr(VALID_ATTRIBUTES))];
+	char * valid_attributes_list;
 	int validate_config = 0;
 	int valid_config_size = 0;
+	int allow_all_prefixes = 0;
 
 	memset(&opts, 0, sizeof(opts));
 
@@ -486,10 +494,18 @@ int main(int argc, char** argv)
 		enable_debug();
 	}
 
-	strncpy(valid_config_env, xstr(VALID_ATTRIBUTES), sizeof(valid_config_env));
-    if (strcmp(valid_config_env, "VALID_ATTRIBUTES")) {
+	const char * allow_prefix_enabled = get_env_str(NVRAM_ENV_ALLOW_ALL_PREFIXES, xstr(NVRAM_ALLOW_ALL_PREFIXES));
+	if(!strcmp(allow_prefix_enabled, "yes"))
+	{
+		allow_all_prefixes = 1;
+	}
+
+	const char * valid_attributes_env = get_env_str(NVRAM_ENV_VALID_ATTRIBUTES, xstr(VALID_ATTRIBUTES));
+    if (strcmp(valid_attributes_env, "none")) {
 		validate_config = 1;
-		parse_valid_config(config_param_list, valid_config_env, &valid_config_size);
+		valid_attributes_list = malloc(strlen(valid_attributes_env)+1);
+		strncpy(valid_attributes_list, valid_attributes_env, strlen(valid_attributes_env));
+		parse_valid_config(config_param_list, valid_attributes_list, &valid_config_size);
     }
 
 	for (int i = 1; i < argc; i++) {
@@ -610,21 +626,21 @@ int main(int argc, char** argv)
 					goto free_and_exit;
 				}
 			}
-#ifndef NVRAM_ALLOW_ALL_PREFIXES
-			if (!starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX) &&
-			    opts.system_mode) {
-				pr_err("required prefix \"%s\" missing in system attribute\n", NVRAM_SYSTEM_PREFIX);
-				r = EINVAL;
-				goto free_and_exit;
+			if(!allow_all_prefixes)
+			{
+				if (!starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX) &&
+					opts.system_mode) {
+					pr_err("required prefix \"%s\" missing in system attribute\n", NVRAM_SYSTEM_PREFIX);
+					r = EINVAL;
+					goto free_and_exit;
+				}
+				if (starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX) &&
+					!opts.system_mode) {
+					pr_err("forbidden prefix \"%s\" in user attribute\n", NVRAM_SYSTEM_PREFIX);
+					r = EINVAL;
+					goto free_and_exit;
+				}
 			}
-			else 
-			if (starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX) &&
-			    !opts.system_mode) {
-				pr_err("forbidden prefix \"%s\" in user attribute\n", NVRAM_SYSTEM_PREFIX);
-				r = EINVAL;
-				goto free_and_exit;
-			}
-#endif
 			write_ops++;
 			break;
 		case OP_DEL:
