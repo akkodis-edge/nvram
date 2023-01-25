@@ -28,8 +28,9 @@
 #define NVRAM_ENV_VALID_ATTRIBUTES "NVRAM_VALID_ATTRIBUTES"
 #define NVRAM_SYSTEM_UNLOCK_MAGIC "16440"
 #define NVRAM_SYSTEM_PREFIX "SYS_"
-#define NVRAM_MAX_ATTRIBUTES 30
+#define NVRAM_ENV_INIT_ENABLED "NVRAM_INIT_ENABLED"
 
+#define NVRAM_MAX_ATTRIBUTES 30
 #define MAX_OP 30
 
 static int FDLOCK = 0;
@@ -184,12 +185,12 @@ static void print_usage(const char* progname)
 	printf("\n");
 
 	printf("Commands:\n");
-	printf("  --set       Write attribute. Requires KEY And VALUE\n");
-	printf("  --get       Read attribute. Requires KEY\n");
-	printf("  --del       Delete attributes. Requires KEY\n");
-	printf("  --list      Lists attributes\n");
-	printf("  --init      Initializes attributes read from a file located at /sys partition.\n");
-	printf("              Requires KEY and VALUE. E.g.: nvram --init FILE config_file\n");
+	printf("  --set         Write attribute. Requires KEY And VALUE\n");
+	printf("  --get         Read attribute. Requires KEY\n");
+	printf("  --del         Delete attributes. Requires KEY\n");
+	printf("  --list        Lists attributes\n");
+	printf("  --init <FILE> Initializes attributes read from a file.\n");
+	printf("                Requires file name. Example: nvram --init config_file\n");
 	printf("\n");
 
 	printf("Return values:\n");
@@ -394,7 +395,6 @@ int parse_valid_config(char ** attributes, char * list, int * list_size)
 // Parses configuration file used with INIT command
 int parse_config_file(struct opts * opts, char * filename) {
     FILE *fp;
-	char file_path[100];
 	char * key;
 	char * value;
 	char * line = NULL;
@@ -404,17 +404,10 @@ int parse_config_file(struct opts * opts, char * filename) {
 	if(!opts)
 		return EINVAL;
 
-    const char * config_file_path = get_env_str(NVRAM_ENV_CONFIG_FILE_PATH, xstr(NVRAM_CONFIG_FILE_PATH));
-    if (strcmp(xstr(NVRAM_CONFIG_FILE_PATH), NVRAM_ENV_CONFIG_FILE_PATH)) {
-		strncpy(file_path, config_file_path, sizeof(file_path));
-	}
-
-	strcat(file_path, filename);
-
-    fp = fopen(file_path, "r");
+    fp = fopen(filename, "r");
 	if (fp == NULL)
 	{
-		fprintf(stderr, "File %s not found\n", file_path);
+		fprintf(stderr, "File %s not found\n", filename);
 		exit(EXIT_FAILURE);
 
 	}
@@ -488,6 +481,7 @@ int main(int argc, char** argv)
 	int validate_config = 0;
 	int valid_config_size = 0;
 	int allow_all_prefixes = 0;
+	int init_enabled = 0;
 
 	memset(&opts, 0, sizeof(opts));
 
@@ -511,6 +505,12 @@ int main(int argc, char** argv)
 		strncpy(valid_attributes_list, valid_attributes_env, strlen(valid_attributes_env));
 		parse_valid_config(config_param_list, valid_attributes_list, &valid_config_size);
     }
+
+	const char * init_enabled_env = get_env_str(NVRAM_ENV_INIT_ENABLED, xstr(NVRAM_INIT_ENABLED));
+	if(!strcmp(init_enabled_env, "yes"))
+	{
+		init_enabled = 1;
+	}
 
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp("--set", argv[i]) || !strcmp("set", argv[i])) {
@@ -578,14 +578,14 @@ int main(int argc, char** argv)
 			opts.op_count++;
 		}
 		else
-		if (!strcmp("--init", argv[i]) || !strcmp("init", argv[i])) {
-			if (i + 2 >= argc) {
+		if (init_enabled && (!strcmp("--init", argv[i]) || !strcmp("init", argv[i]))) {
+			if (i + 1 >= argc) {
 				fprintf(stderr, "Too few arguments for command init\n");
 				r = EINVAL;
 				goto free_and_exit;
 			}
 
-			parse_config_file(&opts, argv[i + 2]);
+			parse_config_file(&opts, argv[i + 1]);
 			if(validate_config && validate_config_list(&opts, (const char**)config_param_list, valid_config_size))
 			{
 				r = EINVAL;
