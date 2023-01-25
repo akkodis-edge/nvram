@@ -57,7 +57,7 @@ static long get_env_long(const char* env)
 static int system_unlocked(void)
 {
 	const char* unlock_str = getenv(NVRAM_ENV_SYSTEM_UNLOCK);
-	if (unlock_str && strcmp(unlock_str, xstr(NVRAM_SYSTEM_UNLOCK_MAGIC))) {
+	if (unlock_str && !strcmp(unlock_str, NVRAM_SYSTEM_UNLOCK_MAGIC)) {
 		return 1;
 	}
 	return 0;
