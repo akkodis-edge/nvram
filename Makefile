@@ -5,7 +5,6 @@ INSTALL_PATH ?= /usr/sbin
 NVRAM_INTERFACE_TYPE ?= file
 OBJS = log.o nvram.o main.o libnvram/libnvram.a
 
-NVRAM_ALLOW_ALL_PREFIXES ?= no
 NVRAM_VALID_ATTRIBUTES ?= none
 NVRAM_INIT_ENABLED ?= no
 
@@ -34,7 +33,6 @@ NVRAM_SYSTEM_A ?= /sys/firmware/efi/efivars/604dafe4-587a-47f6-8604-3d33eb83da3d
 NVRAM_USER_A ?= /sys/firmware/efi/efivars/604dafe4-587a-47f6-8604-3d33eb83da3d-user
 endif
 
-CFLAGS += -DNVRAM_ALLOW_ALL_PREFIXES=$(NVRAM_ALLOW_ALL_PREFIXES)
 CFLAGS += -DVALID_ATTRIBUTES=$(NVRAM_VALID_ATTRIBUTES)
 
 CFLAGS += -std=gnu11 -Wall -Wextra -Werror -pedantic

@@ -24,7 +24,6 @@
 #define NVRAM_ENV_SYSTEM_A "NVRAM_SYSTEM_A"
 #define NVRAM_ENV_SYSTEM_B "NVRAM_SYSTEM_B"
 #define NVRAM_ENV_SYSTEM_UNLOCK "NVRAM_SYSTEM_UNLOCK"
-#define NVRAM_ENV_ALLOW_ALL_PREFIXES "NVRAM_ALLOW_ALL_PREFIXES"
 #define NVRAM_ENV_VALID_ATTRIBUTES "NVRAM_VALID_ATTRIBUTES"
 #define NVRAM_SYSTEM_UNLOCK_MAGIC "16440"
 #define NVRAM_SYSTEM_PREFIX "SYS_"
@@ -152,6 +151,7 @@ struct operation {
 
 struct opts {
 	int system_mode;
+	int init_mode;
 	int op_count;
 	struct operation operations[MAX_OP];
 };
@@ -171,7 +171,6 @@ static void print_usage(const char* progname)
 	printf("\n");
 
 	printf("Program Configuration:\n");
-	printf("System Allow All Prefixes: %s\n", xstr(NVRAM_ALLOW_ALL_PREFIXES));
 	printf("Valid attributes: %s\n", xstr(VALID_ATTRIBUTES));
 	printf("\n");
 
@@ -480,7 +479,6 @@ int main(int argc, char** argv)
 	char * valid_attributes_ptr = NULL;
 	int validate_config = 0;
 	int valid_config_size = 0;
-	int allow_all_prefixes = 0;
 	int init_enabled = 0;
 
 	memset(&opts, 0, sizeof(opts));
@@ -489,12 +487,6 @@ int main(int argc, char** argv)
 
 	if (get_env_long(NVRAM_ENV_DEBUG)) {
 		enable_debug();
-	}
-
-	const char * allow_prefix_enabled = get_env_str(NVRAM_ENV_ALLOW_ALL_PREFIXES, xstr(NVRAM_ALLOW_ALL_PREFIXES));
-	if(!strcmp(allow_prefix_enabled, "yes"))
-	{
-		allow_all_prefixes = 1;
 	}
 
 	const char * valid_attributes_env = get_env_str(NVRAM_ENV_VALID_ATTRIBUTES, xstr(VALID_ATTRIBUTES));
@@ -592,6 +584,7 @@ int main(int argc, char** argv)
 				goto free_and_exit;
 			}
 			i += 2;
+			opts.init_mode = 1;
 		}
 		else
 		if (!strcmp("--sys", argv[i])) {
@@ -618,29 +611,27 @@ int main(int argc, char** argv)
 	int read_ops = 0;
 	int write_ops = 0;
 	pr_dbg("system_mode: %d\n", opts.system_mode);
+	pr_dbg("init_mode: %d\n", opts.init_mode);
 	for (int i = 0; i < opts.op_count; ++i) {
 		pr_dbg("operation: %d, key: %s, val: %s\n",
 				opts.operations[i].op, opts.operations[i].key, opts.operations[i].value);
 		switch (opts.operations[i].op) {
         case OP_SET:
-            if (opts.system_mode) {
+            if (opts.system_mode || opts.init_mode) {
 				if (!system_unlocked()) {
 					pr_err("system write locked\n")
 					r = EACCES;
 					goto free_and_exit;
 				}
 			}
-			if(!allow_all_prefixes)
-			{
-				if (!starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX) &&
-					opts.system_mode) {
-					pr_err("required prefix \"%s\" missing in system attribute\n", NVRAM_SYSTEM_PREFIX);
-					r = EINVAL;
-					goto free_and_exit;
-				}
+			if (!starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX) &&
+				opts.system_mode) {
+				pr_err("required prefix \"%s\" missing in system attribute\n", NVRAM_SYSTEM_PREFIX);
+				r = EINVAL;
+				goto free_and_exit;
 			}
 			if (starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX) &&
-				!opts.system_mode) {
+				(!opts.system_mode && !opts.init_mode)) {
 				pr_err("forbidden prefix \"%s\" in user attribute\n", NVRAM_SYSTEM_PREFIX);
 				r = EINVAL;
 				goto free_and_exit;
@@ -726,7 +717,7 @@ int main(int argc, char** argv)
 		for (int i = 0; i < opts.op_count; ++i) {
 			if (opts.operations[i].op == OP_SET) {
 				pr_dbg("HEre: %d: op_count: %d\n", i, opts.op_count);
-				if(opts.system_mode) {
+				if(starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX)) {
 					r = add_list_entry("system", &list_system, opts.operations[i].key, opts.operations[i].value);
 					if (r == 1) {
 						pr_dbg("written\n");
