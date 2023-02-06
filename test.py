@@ -28,6 +28,7 @@ class test_user_base(unittest.TestCase):
                 'NVRAM_SYSTEM_B': f'{self.dir}/system_b',
                 'NVRAM_USER_A': f'{self.dir}/user_a',
                 'NVRAM_USER_B': f'{self.dir}/user_b',
+                'NVRAM_INIT_ENABLED' : 'no',
             }
         self.sys = False
     
@@ -411,6 +412,108 @@ class test_legacy_api(test_user_base):
         self.nvram_legacy_delete([key])
         with self.assertRaises(CalledProcessError):
             self.nvram_legacy_get(key)
+
+class test_init(test_user_base):
+    def setUp(self):
+        super().setUp()
+        self.env['NVRAM_INIT_ENABLED'] = 'yes'
+        self.env['NVRAM_SYSTEM_UNLOCK'] = '16440'
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def nvram_init(self, filename):
+        args = []
+        args.extend(['--init', filename])
+        nvram(self.env, args, sys=self.sys)
+        
+    def test_init_sys(self):
+        config_file = 'nvram_init_test'
+        attributes = {}
+
+        f= open('%s%s' % (self.dir, config_file),"w+")
+        f.write("SYS_PRODUCT_ID=20-19602\n")
+        f.write("SYS_PRODUCT_DATE=20221107\n")
+        f.write("LM_PRODUCT_ID=20-19602\n")
+        f.write("LM_PRODUCT_DATE=20221107\n")
+        f.close()
+
+        self.nvram_init(self.dir+config_file)
+
+        # Check that SYS_ attributes are stored in the right partition
+        self.sys = True
+        attributes['SYS_PRODUCT_ID'] = '20-19602'
+        attributes['SYS_PRODUCT_DATE'] = '20221107'
+        d = self.nvram_list()
+        self.assertEqual(d, attributes)
+
+    def test_init_user(self):
+        config_file = 'nvram_init_test'
+
+        f= open('%s%s' % (self.dir, config_file),"w+")
+        f.write("LM_PRODUCT_ID=20-19602\n")
+        f.write("LM_PRODUCT_DATE=20221107\n")
+        f.close()
+
+        self.nvram_init(self.dir+config_file)
+
+        # Check that SYS_ partition is empty
+        self.sys = True
+        d = self.nvram_list()
+        self.assertFalse(d)
+
+        self.sys = False
+        e = self.nvram_list()
+        self.assertTrue(len(e)==2)
+        
+    def test_init_disabled(self):
+        config_file = 'nvram_init_test'
+        attributes = {}
+        self.env['NVRAM_INIT_ENABLED'] = 'no'
+
+        f= open('%s%s' % (self.dir, config_file),"w+")
+        f.write("SYS_PRODUCT_ID=20-19602\n")
+        f.write("SYS_PRODUCT_DATE=20221107\n")
+        f.close()
+
+        with self.assertRaises(CalledProcessError):
+            self.nvram_init(self.dir+config_file)
+
+    def test_init_invalid_config(self):
+        self.env['NVRAM_VALID_ATTRIBUTES'] = 'LM_PRODUCT_ID:LM_PRODUCT_CATALOG'
+        config_file = 'nvram_init_test'
+        attributes = {}
+
+        f= open('%s%s' % (self.dir, config_file),"w+")
+        f.write("SYS_PRODUCT_ID=20-19602\n")
+        f.write("SYS_PRODUCT_DATE=20221107\n")
+        f.write("LM_PRODUCT_ID=20-19602\n")
+        f.write("LM_PRODUCT_DATE=20221107\n")
+        f.close()
+
+        with self.assertRaises(CalledProcessError):
+            self.nvram_init(self.dir+config_file)
+
+    def test_init_valid_config(self):
+        self.env['NVRAM_VALID_ATTRIBUTES'] = 'LM_PRODUCT_ID:LM_PRODUCT_DATE'
+        config_file = 'nvram_init_test'
+        attributes = {}
+
+        f= open('%s%s' % (self.dir, config_file),"w+")
+        f.write("SYS_PRODUCT_ID=20-19602\n")
+        f.write("SYS_PRODUCT_DATE=20221107\n")
+        f.write("LM_PRODUCT_ID=20-19602\n")
+        f.write("LM_PRODUCT_DATE=20221107\n")
+        f.close()
+
+        self.nvram_init(self.dir+config_file)
+
+        attributes['SYS_PRODUCT_ID'] = '20-19602'
+        attributes['SYS_PRODUCT_DATE'] = '20221107'
+        attributes['LM_PRODUCT_ID'] = '20-19602'
+        attributes['LM_PRODUCT_DATE'] = '20221107'
+        d = self.nvram_list()
+        self.assertEqual(d, attributes)
 
 if __name__ == '__main__':
     unittest.main()

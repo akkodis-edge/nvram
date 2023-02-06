@@ -5,7 +5,9 @@ INSTALL_PATH ?= /usr/sbin
 NVRAM_INTERFACE_TYPE ?= file
 OBJS = log.o nvram.o main.o libnvram/libnvram.a
 
-NVRAM_ALLOW_ALL_PREFIXES ?= no
+NVRAM_VALID_ATTRIBUTES ?= none
+NVRAM_INIT_ENABLED ?= no
+
 NVRAM_SRC_VERSION := $(shell git describe --dirty --always --tags)
 ifeq ($(NVRAM_INTERFACE_TYPE), file)
 OBJS += nvram_interface_file.o
@@ -31,9 +33,7 @@ NVRAM_SYSTEM_A ?= /sys/firmware/efi/efivars/604dafe4-587a-47f6-8604-3d33eb83da3d
 NVRAM_USER_A ?= /sys/firmware/efi/efivars/604dafe4-587a-47f6-8604-3d33eb83da3d-user
 endif
 
-ifeq ($(NVRAM_ALLOW_ALL_PREFIXES), yes)
-CFLAGS += -DNVRAM_ALLOW_ALL_PREFIXES
-endif
+CFLAGS += -DVALID_ATTRIBUTES=$(NVRAM_VALID_ATTRIBUTES)
 
 CFLAGS += -std=gnu11 -Wall -Wextra -Werror -pedantic
 CFLAGS += -DNVRAM_SYSTEM_A=$(NVRAM_SYSTEM_A)
@@ -42,6 +42,7 @@ CFLAGS += -DNVRAM_USER_A=$(NVRAM_USER_A)
 CFLAGS += -DNVRAM_USER_B=$(NVRAM_USER_B)
 CFLAGS += -DSRC_VERSION=$(NVRAM_SRC_VERSION)
 CFLAGS += -DINTERFACE_TYPE=$(NVRAM_INTERFACE_TYPE)
+CFLAGS += -DNVRAM_INIT_ENABLED=$(NVRAM_INIT_ENABLED)
 
 all: nvram
 .PHONY : all
