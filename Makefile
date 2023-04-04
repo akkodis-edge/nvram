@@ -9,21 +9,23 @@ NVRAM_SRC_VERSION := $(shell git describe --dirty --always --tags)
 CFLAGS += -DSRC_VERSION=$(NVRAM_SRC_VERSION)
 
 CFLAGS += -std=gnu11 -Wall -Wextra -Werror -pedantic
-ifeq ($(NVRAM_USE_SANITIZER), ON)
+ifeq ($(NVRAM_USE_SANITIZER), 1)
 	CFLAGS += -fsanitize=address -fsanitize=undefined
 	LDFLAGS += -fsanitize=address -fsanitize=undefined
 endif
 
 NVRAM_INTERFACE_DEFAULT ?= file
-NVRAM_INTERFACE_FILE ?= ON
-NVRAM_INTERFACE_MTD ?= OFF
-NVRAM_INTERFACE_EFI ?= OFF
+NVRAM_INTERFACE_FILE ?= 1
+NVRAM_INTERFACE_MTD ?= 0
+NVRAM_INTERFACE_EFI ?= 0
 CFLAGS += -DNVRAM_INTERFACE_DEFAULT=$(NVRAM_INTERFACE_DEFAULT)
+CFLAGS += -DNVRAM_INTERFACE_EFI=$(NVRAM_INTERFACE_EFI)
+CFLAGS += -DNVRAM_INTERFACE_MTD=$(NVRAM_INTERFACE_MTD)
 CFLAGS += -DNVRAM_INTERFACE_FILE=$(NVRAM_INTERFACE_FILE)
 
 OBJS = log.o nvram.o main.o nvram_interface.o libnvram/libnvram.a
 
-ifeq ($(NVRAM_INTERFACE_FILE), ON)
+ifeq ($(NVRAM_INTERFACE_FILE), 1)
 OBJS += nvram_interface_file.o
 NVRAM_FILE_SYSTEM_A ?= /home/lelle/nvram/system_a
 NVRAM_FILE_SYSTEM_B ?= 
@@ -35,7 +37,7 @@ CFLAGS += -DNVRAM_FILE_USER_A=$(NVRAM_FILE_USER_A)
 CFLAGS += -DNVRAM_FILE_USER_B=$(NVRAM_FILE_USER_B)
 endif
 
-ifeq ($(NVRAM_INTERFACE_MTD), ON)
+ifeq ($(NVRAM_INTERFACE_MTD), 1)
 OBJS += nvram_interface_mtd.o
 LDFLAGS += -lmtd
 NVRAM_MTD_SYSTEM_A ?= system_a
@@ -48,7 +50,7 @@ CFLAGS += -DNVRAM_MTD_USER_A=$(NVRAM_MTD_USER_A)
 CFLAGS += -DNVRAM_MTD_USER_B=$(NVRAM_MTD_USER_B)
 endif
 
-ifeq ($(NVRAM_INTERFACE_EFI), ON)
+ifeq ($(NVRAM_INTERFACE_EFI), 1)
 OBJS += nvram_interface_efi.o
 LDFLAGS += -le2p
 NVRAM_EFI_SYSTEM_A ?= /sys/firmware/efi/efivars/604dafe4-587a-47f6-8604-3d33eb83da3d-system
@@ -67,7 +69,7 @@ all: nvram
 .PHONY: nvram
 nvram: $(BUILD)/nvram
 
-$(BUILD)/nvram: $(addprefix $(BUILD)/, $(OBJS)) $(BUILD)/libnvram/libnvram.a
+$(BUILD)/nvram: $(addprefix $(BUILD)/, $(OBJS))
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/%.o: %.c 

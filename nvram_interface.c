@@ -19,15 +19,15 @@
 #define NVRAM_ENV_EFI_SYSTEM_A "NVRAM_EFI_SYSTEM_A"
 #define NVRAM_ENV_EFI_SYSTEM_B "NVRAM_EFI_SYSTEM_B"
 
-#if NVRAM_INTERFACE_FILE == ON
+#if NVRAM_INTERFACE_FILE > 0
 /* nvram_interface_file.c*/
 extern struct nvram_interface nvram_file_interface;
 #endif
-#if NVRAM_INTERFACE_MTD == ON
+#if NVRAM_INTERFACE_MTD > 0
 /* nvram_interface_mtd.c*/
 extern struct nvram_interface nvram_mtd_interface;
 #endif
-#if NVRAM_INTERFACE_EFI == ON
+#if NVRAM_INTERFACE_EFI > 0
 /* nvram_interface_efi.c*/
 extern struct nvram_interface nvram_efi_interface;
 #endif
@@ -42,15 +42,15 @@ static const char* get_env_str(const char* env, const char* def)
 
 struct nvram_interface* nvram_get_interface(const char* interface_name)
 {
-#if NVRAM_INTERFACE_FILE == ON
+#if NVRAM_INTERFACE_FILE > 0
 	if (!strcmp("file", interface_name))
 		return &nvram_file_interface;
 #endif
-#if NVRAM_INTERFACE_MTD == ON
+#if NVRAM_INTERFACE_MTD > 0
 	if (!strcmp("mtd", interface_name))
 		return &nvram_mtd_interface;
 #endif
-#if NVRAM_INTERFACE_EFI == ON
+#if NVRAM_INTERFACE_EFI > 0
 	if (!strcmp("efi", interface_name))
 		return &nvram_efi_interface;
 #endif
@@ -59,7 +59,7 @@ struct nvram_interface* nvram_get_interface(const char* interface_name)
 
 const char* nvram_get_interface_section(const char* interface_name, enum section section)
 {
-#if NVRAM_INTERFACE_FILE == ON
+#if NVRAM_INTERFACE_FILE > 0
 	if (!strcmp("file", interface_name)) {
 		switch (section) {
 		case SYSTEM_A:
@@ -73,7 +73,7 @@ const char* nvram_get_interface_section(const char* interface_name, enum section
 		}
 	}
 #endif
-#if NVRAM_INTERFACE_MTD == ON
+#if NVRAM_INTERFACE_MTD > 0
 	if (!strcmp("mtd", interface_name)) {
 		switch (section) {
 		case SYSTEM_A:
@@ -87,7 +87,7 @@ const char* nvram_get_interface_section(const char* interface_name, enum section
 		}
 	}
 #endif
-#if NVRAM_INTERFACE_EFI == ON
+#if NVRAM_INTERFACE_EFI > 0
 	if (!strcmp("efi", interface_name)) {
 		switch (section) {
 		case SYSTEM_A:
