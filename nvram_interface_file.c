@@ -113,7 +113,7 @@ static const char* file_section(const struct nvram_priv* priv)
 	return priv->path;
 }
 
-/* Exposed by nvram_interface_provider.h */
+/* Exposed by nvram_interface.c */
 struct nvram_interface nvram_file_interface =
 {
 	.init = file_init,

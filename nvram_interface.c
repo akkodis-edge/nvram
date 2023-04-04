@@ -10,10 +10,18 @@
 #define NVRAM_ENV_FILE_USER_B "NVRAM_FILE_USER_B"
 #define NVRAM_ENV_FILE_SYSTEM_A "NVRAM_FILE_SYSTEM_A"
 #define NVRAM_ENV_FILE_SYSTEM_B "NVRAM_FILE_SYSTEM_B"
+#define NVRAM_ENV_MTD_USER_A "NVRAM_MTD_USER_A"
+#define NVRAM_ENV_MTD_USER_B "NVRAM_MTD_USER_B"
+#define NVRAM_ENV_MTD_SYSTEM_A "NVRAM_MTD_SYSTEM_A"
+#define NVRAM_ENV_MTD_SYSTEM_B "NVRAM_MTD_SYSTEM_B"
 
 #if NVRAM_INTERFACE_FILE == ON
 /* nvram_interface_file.c*/
 extern struct nvram_interface nvram_file_interface;
+#endif
+#if NVRAM_INTERFACE_MTD == ON
+/* nvram_interface_mtd.c*/
+extern struct nvram_interface nvram_mtd_interface;
 #endif
 
 static const char* get_env_str(const char* env, const char* def)
@@ -29,6 +37,10 @@ struct nvram_interface* nvram_get_interface(const char* interface_name)
 #if NVRAM_INTERFACE_FILE == ON
 	if (!strcmp("file", interface_name))
 		return &nvram_file_interface;
+#endif
+#if NVRAM_INTERFACE_MTD == ON
+	if (!strcmp("mtd", interface_name))
+		return &nvram_mtd_interface;
 #endif
 	return NULL;
 }
@@ -46,6 +58,20 @@ const char* nvram_get_interface_section(const char* interface_name, enum section
 			return get_env_str(NVRAM_ENV_FILE_USER_A, xstr(NVRAM_FILE_USER_A));
 		case USER_B:
 			return get_env_str(NVRAM_ENV_FILE_USER_B, xstr(NVRAM_FILE_USER_B));
+		}
+	}
+#endif
+#if NVRAM_INTERFACE_FILE == ON
+	if (!strcmp("mtd", interface_name)) {
+		switch (section) {
+		case SYSTEM_A:
+			return get_env_str(NVRAM_ENV_MTD_SYSTEM_A, xstr(NVRAM_MTD_SYSTEM_A));
+		case SYSTEM_B:
+			return get_env_str(NVRAM_ENV_MTD_SYSTEM_B, xstr(NVRAM_MTD_SYSTEM_B));
+		case USER_A:
+			return get_env_str(NVRAM_ENV_MTD_USER_A, xstr(NVRAM_MTD_USER_A));
+		case USER_B:
+			return get_env_str(NVRAM_ENV_MTD_USER_B, xstr(NVRAM_MTD_USER_B));
 		}
 	}
 #endif

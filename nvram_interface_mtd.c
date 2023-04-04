@@ -8,7 +8,7 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <mtd/mtd-user.h>
-#include <mtd/libmtd.h>
+#include <libmtd.h>
 #include <errno.h>
 #include "nvram_interface.h"
 #include "log.h"
@@ -26,7 +26,7 @@ struct nvram_mtd {
 	long long size;
 };
 
-struct nvram_device {
+struct nvram_priv {
 	char* label;
 	struct nvram_mtd mtd;
 	char* gpio;
@@ -121,14 +121,14 @@ static int init_nvram_mtd(struct nvram_mtd* nvram_mtd, const char* label)
 	return 0;
 }
 
-int nvram_interface_init(struct nvram_device** dev, const char* section)
+static int nvram_mtd_init(struct nvram_priv** priv, const char* section)
 {
 	int r = 0;
-	struct nvram_device *pbuf = malloc(sizeof(struct nvram_device));
+	struct nvram_priv *pbuf = malloc(sizeof(struct nvram_priv));
 	if (!pbuf) {
 		return -ENOMEM;
 	}
-	memset(pbuf, 0, sizeof(struct nvram_device));
+	memset(pbuf, 0, sizeof(struct nvram_priv));
 
 	pbuf->label = (char*) section;
 
@@ -148,37 +148,37 @@ int nvram_interface_init(struct nvram_device** dev, const char* section)
 		pr_dbg("%s: WP_GPIO: %s\n", __func__, pbuf->gpio);
 	}
 
-	*dev = pbuf;
+	*priv = pbuf;
 
 	return 0;
 }
 
-void nvram_interface_destroy(struct nvram_device** dev)
+static void nvram_mtd_destroy(struct nvram_priv** priv)
 {
-	struct nvram_device *pdev = *dev;
+	struct nvram_priv *pdev = *priv;
 	if (pdev) {
 		if (pdev->mtd.path) {
 			free(pdev->mtd.path);
 		}
 		free(pdev);
-		*dev = NULL;
+		*priv = NULL;
 	}
 }
 
-int nvram_interface_size(struct nvram_device* dev, size_t* size)
+static int nvram_mtd_size(const struct nvram_priv* priv, size_t* size)
 {
-	*size = dev->mtd.size;
+	*size = priv->mtd.size;
 	return 0;
 }
 
-int nvram_interface_read(struct nvram_device* dev, uint8_t* buf, size_t size)
+static int nvram_mtd_read(struct nvram_priv* priv, uint8_t* buf, size_t size)
 {
 	if (!buf) {
 		return -EINVAL;
 	}
 
 	int r = 0;
-	int fd = open(dev->mtd.path, O_RDONLY);
+	int fd = open(priv->mtd.path, O_RDONLY);
 	if (fd < 0) {
 		return -errno;
 	}
@@ -233,32 +233,32 @@ static int set_gpio(const char* path, bool value)
 	return -errno;
 }
 
-int nvram_interface_write(struct nvram_device* dev, const uint8_t* buf, size_t size)
+static int nvram_mtd_write(struct nvram_priv* priv, const uint8_t* buf, size_t size)
 {
 	if (!buf) {
 		return -EINVAL;
 	}
 
 	int r = 0;
-	int fd = open(dev->mtd.path, O_WRONLY);
+	int fd = open(priv->mtd.path, O_WRONLY);
 	if (fd < 0) {
 		return -errno;
 	}
 
-	if (dev->gpio) {
-		r = set_gpio(dev->gpio, false);
+	if (priv->gpio) {
+		r = set_gpio(priv->gpio, false);
 		if (r) {
 			goto exit;
 		}
 	}
 
-	pr_dbg("%s: erasing\n", dev->mtd.path);
-	r = erase_mtd(fd, dev->mtd.size);
+	pr_dbg("%s: erasing\n", priv->mtd.path);
+	r = erase_mtd(fd, priv->mtd.size);
 	if (r) {
 		goto exit;
 	}
 
-	pr_dbg("%s: writing\n", dev->mtd.path);
+	pr_dbg("%s: writing\n", priv->mtd.path);
 	ssize_t bytes = write(fd, buf, size);
 	if (bytes < 0) {
 		r = -errno;
@@ -273,15 +273,26 @@ int nvram_interface_write(struct nvram_device* dev, const uint8_t* buf, size_t s
 	r = 0;
 
 exit:
-	if (dev->gpio) {
-		set_gpio(dev->gpio, true);
+	if (priv->gpio) {
+		set_gpio(priv->gpio, true);
 	}
 
 	close(fd);
 	return r;
 }
 
-const char* nvram_interface_section(const struct nvram_device* dev)
+static const char* nvram_mtd_section(const struct nvram_priv* priv)
 {
-	return dev->label;
+	return priv->label;
 }
+
+/* Exposed by nvram_interface.c */
+struct nvram_interface nvram_mtd_interface =
+{
+	.init = nvram_mtd_init,
+	.destroy = nvram_mtd_destroy,
+	.size = nvram_mtd_size,
+	.read = nvram_mtd_read,
+	.write = nvram_mtd_write,
+	.section = nvram_mtd_section,
+};
