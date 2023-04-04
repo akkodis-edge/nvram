@@ -20,7 +20,7 @@ struct nvram;
  *   0 for success
  *   negative errno for error
  */
-int nvram_init(struct nvram** nvram, struct libnvram_list** list, const char* section_a, const char* section_b);
+int nvram_init(struct nvram** nvram, struct nvram_interface* interface, struct libnvram_list** list, const char* section_a, const char* section_b);
 
 /*
  * Commit list of variables to nvram

@@ -10,18 +10,16 @@
 #include <limits.h>
 #include "log.h"
 #include "nvram.h"
+#include "nvram_interface.h"
 #include "libnvram/libnvram.h"
 
 #define xstr(a) str(a)
 #define str(a) #a
 
+#define NVRAM_ENV_INTERFACE "NVRAM_INTERFACE"
 #define NVRAM_PROGRAM_NAME "nvram"
 #define NVRAM_LOCKFILE "/run/lock/nvram.lock"
 #define NVRAM_ENV_DEBUG "NVRAM_DEBUG"
-#define NVRAM_ENV_USER_A "NVRAM_USER_A"
-#define NVRAM_ENV_USER_B "NVRAM_USER_B"
-#define NVRAM_ENV_SYSTEM_A "NVRAM_SYSTEM_A"
-#define NVRAM_ENV_SYSTEM_B "NVRAM_SYSTEM_B"
 #define NVRAM_ENV_SYSTEM_UNLOCK "NVRAM_SYSTEM_UNLOCK"
 #define NVRAM_SYSTEM_UNLOCK_MAGIC "16440"
 #define NVRAM_SYSTEM_PREFIX "SYS_"
@@ -150,18 +148,18 @@ struct opts {
 	struct operation operations[MAX_OP];
 };
 
-static void print_usage(const char* progname)
+static void print_usage(const char* progname, const char* interface_name)
 {
 	printf("%s, nvram interface, Data Respons Solutions AB\n", progname);
 	printf("Version:   %s\n", xstr(SRC_VERSION));
-	printf("Interface: %s\n", xstr(INTERFACE_TYPE));
+	printf("Interface: %s\n", interface_name);
 	printf("\n");
 
-	printf("Default paths:\n");
-	printf("system_a: %s\n", xstr(NVRAM_SYSTEM_A));
-	printf("system_b: %s\n", xstr(NVRAM_SYSTEM_B));
-	printf("user_a:   %s\n", xstr(NVRAM_USER_A));
-	printf("user_b:   %s\n", xstr(NVRAM_USER_B));
+	printf("Paths:\n");
+	printf("system_a: %s\n", nvram_get_interface_section(interface_name, SYSTEM_A));
+	printf("system_b: %s\n", nvram_get_interface_section(interface_name, SYSTEM_B));
+	printf("user_a:   %s\n", nvram_get_interface_section(interface_name, USER_A));
+	printf("user_b:   %s\n", nvram_get_interface_section(interface_name, USER_B));
 	printf("\n");
 
 	printf("Usage:   %s [OPTION] [COMMAND] [KEY] [VALUE]\n", progname);
@@ -376,6 +374,13 @@ int main(int argc, char** argv)
 		enable_debug();
 	}
 
+	const char* interface_name = get_env_str(NVRAM_ENV_INTERFACE, xstr(NVRAM_INTERFACE_DEFAULT));
+	struct nvram_interface* interface = nvram_get_interface(interface_name);
+	if (interface == NULL) {
+		fprintf(stderr, "Unresolved interface: %s\n", interface_name);
+		return EINVAL;
+	}
+
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp("--set", argv[i]) || !strcmp("set", argv[i])) {
 			if (i + 2 >= argc) {
@@ -435,7 +440,7 @@ int main(int argc, char** argv)
 		}
 		else
 		if (!strcmp("-h", argv[i]) || !strcmp("--help", argv[i])) {
-			print_usage(NVRAM_PROGRAM_NAME);
+			print_usage(NVRAM_PROGRAM_NAME, interface_name);
 			return 1;
 		}
 		else {
@@ -507,21 +512,21 @@ int main(int argc, char** argv)
 		goto exit;
 	}
 
-	const char *nvram_system_a = get_env_str(NVRAM_ENV_SYSTEM_A, xstr(NVRAM_SYSTEM_A));
-	const char *nvram_system_b = get_env_str(NVRAM_ENV_SYSTEM_B, xstr(NVRAM_SYSTEM_B));
+	const char *nvram_system_a = nvram_get_interface_section(interface_name, SYSTEM_A);
+	const char *nvram_system_b = nvram_get_interface_section(interface_name, SYSTEM_B);
 	pr_dbg("NVRAM_SYSTEM_A: %s\n", nvram_system_a);
 	pr_dbg("NVRAM_SYSTEM_B: %s\n", nvram_system_b);
 
-	r = nvram_init(&nvram_system, &list_system, nvram_system_a, nvram_system_b);
+	r = nvram_init(&nvram_system, interface, &list_system, nvram_system_a, nvram_system_b);
 	if (r) {
 		goto exit;
 	}
 	if (!opts.system_mode) {
-		const char *nvram_user_a = get_env_str(NVRAM_ENV_USER_A, xstr(NVRAM_USER_A));
-		const char *nvram_user_b = get_env_str(NVRAM_ENV_USER_B, xstr(NVRAM_USER_B));
+		const char *nvram_user_a = nvram_get_interface_section(interface_name, USER_A);
+		const char *nvram_user_b = nvram_get_interface_section(interface_name, USER_B);
 		pr_dbg("NVRAM_USER_A: %s\n", nvram_user_a);
 		pr_dbg("NVRAM_USER_B: %s\n", nvram_user_b);
-		r = nvram_init(&nvram_user, &list_user, nvram_user_a, nvram_user_b);
+		r = nvram_init(&nvram_user, interface, &list_user, nvram_user_a, nvram_user_b);
 		if (r) {
 			goto exit;
 		}

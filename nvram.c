@@ -10,9 +10,10 @@
 #include "libnvram/libnvram.h"
 
 struct nvram {
+	struct nvram_interface* interface;
 	struct libnvram_transaction trans;
-	struct nvram_device *dev_a;
-	struct nvram_device *dev_b;
+	struct nvram_priv* priv_a;
+	struct nvram_priv* priv_b;
 };
 
 static const char* nvram_active_str(enum libnvram_active active)
@@ -27,20 +28,20 @@ static const char* nvram_active_str(enum libnvram_active active)
 	}
 }
 
-static int read_section(struct nvram_device* dev, uint8_t** data, size_t* len)
+static int read_section(struct nvram_interface* interface, struct nvram_priv* priv, uint8_t** data, size_t* len)
 {
 	size_t size = 0;
 	uint8_t *buf = NULL;
 
-	int r = nvram_interface_size(dev, &size);
+	int r = interface->size(priv, &size);
 	if (r) {
-		pr_err("%s: failed checking size [%d]: %s\n", nvram_interface_section(dev), -r, strerror(-r));
+		pr_err("%s: failed checking size [%d]: %s\n", interface->section(priv), -r, strerror(-r));
 		goto error_exit;
 	}
 
 	if (size > UINT32_MAX) { // libnvram limitation
 		r = -EINVAL;
-		pr_err("%s: size %zu larger than limit %u\n", nvram_interface_section(dev), size, UINT32_MAX);
+		pr_err("%s: size %zu larger than limit %u\n", interface->section(priv), size, UINT32_MAX);
 		goto error_exit;
 	}
 
@@ -48,13 +49,13 @@ static int read_section(struct nvram_device* dev, uint8_t** data, size_t* len)
 		buf = (uint8_t*) malloc(size);
 		if (!buf) {
 			r = -ENOMEM;
-			pr_err("%s: failed allocating %zu byte read buffer\n", nvram_interface_section(dev), size);
+			pr_err("%s: failed allocating %zu byte read buffer\n", interface->section(priv), size);
 			goto error_exit;
 		}
 
-		r = nvram_interface_read(dev, buf, size);
+		r = interface->read(priv, buf, size);
 		if (r) {
-			pr_err("%s: failed reading %zu bytes [%d]: %s\n", nvram_interface_section(dev), size, -r, strerror(-r));
+			pr_err("%s: failed reading %zu bytes [%d]: %s\n", interface->section(priv), size, -r, strerror(-r));
 			goto error_exit;
 		}
 	}
@@ -71,15 +72,15 @@ error_exit:
 	return r;
 }
 
-static int init_and_read(struct nvram_device** dev, const char* section, enum libnvram_active name, uint8_t** buf, size_t* size)
+static int init_and_read(struct nvram_interface* interface, struct nvram_priv** priv, const char* section, enum libnvram_active name, uint8_t** buf, size_t* size)
 {
 	pr_dbg("%s: initializing: %s\n", nvram_active_str(name), section);
-	int r = nvram_interface_init(dev, section);
+	int r = interface->init(priv, section);
 	if (r) {
 		pr_err("%s: failed init [%d]: %s\n", section, -r, strerror(-r));
 		return r;
 	}
-	r = read_section(*dev, buf, size);
+	r = read_section(interface, *priv, buf, size);
 	if (r) {
 		return r;
 	}
@@ -88,8 +89,13 @@ static int init_and_read(struct nvram_device** dev, const char* section, enum li
 	return 0;
 }
 
-int nvram_init(struct nvram** nvram, struct libnvram_list** list, const char* section_a, const char* section_b)
+int nvram_init(struct nvram** nvram, struct nvram_interface* interface, struct libnvram_list** list, const char* section_a, const char* section_b)
 {
+	if (interface == NULL || interface->init == NULL || interface->destroy == NULL
+		|| interface->size == NULL || interface->read == NULL
+		|| interface->write == NULL || interface->section == NULL)
+		return EINVAL;
+
 	uint8_t *buf_a = NULL;
 	size_t size_a = 0;
 	uint8_t *buf_b = NULL;
@@ -99,16 +105,17 @@ int nvram_init(struct nvram** nvram, struct libnvram_list** list, const char* se
 		return -ENOMEM;
 	}
 	memset(pnvram, 0, sizeof(struct nvram));
+	pnvram->interface = interface;
 
 	int r = 0;
 	if (section_a && strlen(section_a) > 0) {
-		r = init_and_read(&pnvram->dev_a, section_a, LIBNVRAM_ACTIVE_A, &buf_a, &size_a);
+		r = init_and_read(pnvram->interface, &pnvram->priv_a, section_a, LIBNVRAM_ACTIVE_A, &buf_a, &size_a);
 		if (r) {
 			goto exit;
 		}
 	}
 	if (section_b && strlen(section_b) > 0) {
-		r = init_and_read(&pnvram->dev_b, section_b, LIBNVRAM_ACTIVE_B, &buf_b, &size_b);
+		r = init_and_read(pnvram->interface, &pnvram->priv_b, section_b, LIBNVRAM_ACTIVE_B, &buf_b, &size_b);
 		if (r) {
 			goto exit;
 		}
@@ -135,11 +142,11 @@ int nvram_init(struct nvram** nvram, struct libnvram_list** list, const char* se
 exit:
 	if (r) {
 		if (pnvram) {
-			if (pnvram->dev_a) {
-				nvram_interface_destroy(&pnvram->dev_a);
+			if (pnvram->priv_a) {
+				interface->destroy(&pnvram->priv_a);
 			}
-			if (pnvram->dev_b) {
-				nvram_interface_destroy(&pnvram->dev_b);
+			if (pnvram->priv_b) {
+				interface->destroy(&pnvram->priv_b);
 			}
 			free(pnvram);
 		}
@@ -154,12 +161,12 @@ exit:
 	return r;
 }
 
-static int _write(struct nvram_device* dev, const uint8_t* buf, uint32_t size)
+static int _write(struct nvram_interface* interface, struct nvram_priv* priv, const uint8_t* buf, uint32_t size)
 {
-	pr_dbg("%s: write: %" PRIu32 " b\n", nvram_interface_section(dev), size);
-	int r = nvram_interface_write(dev, buf, size);
+	pr_dbg("%s: write: %" PRIu32 " b\n", interface->section(priv), size);
+	int r = interface->write(priv, buf, size);
 	if (r) {
-		pr_err("%s: failed writing %" PRIu32 " b [%d]: %s\n", nvram_interface_section(dev), size, -r, strerror(-r));
+		pr_err("%s: failed writing %" PRIu32 " b [%d]: %s\n", interface->section(priv), size, -r, strerror(-r));
 	}
 	return r;
 }
@@ -186,18 +193,18 @@ int nvram_commit(struct nvram* nvram, const struct libnvram_list* list)
 		goto exit;
 	}
 
-	if (!nvram->dev_a || !nvram->dev_b) {
+	if (!nvram->priv_a || !nvram->priv_b) {
 		// Transactional write disabled
-		r = _write(nvram->dev_a ? nvram->dev_a : nvram->dev_b, buf, size);
+		r = _write(nvram->interface, nvram->priv_a ? nvram->priv_a : nvram->priv_b, buf, size);
 	}
 	else {
 		const int is_write_a = (op & LIBNVRAM_OPERATION_WRITE_A) == LIBNVRAM_OPERATION_WRITE_A;
 		const int is_counter_reset = (op & LIBNVRAM_OPERATION_COUNTER_RESET) == LIBNVRAM_OPERATION_COUNTER_RESET;
 		// first write
-		r = _write(is_write_a ? nvram->dev_a : nvram->dev_b, buf, size);
+		r = _write(nvram->interface, is_write_a ? nvram->priv_a : nvram->priv_b, buf, size);
 		if (!r && is_counter_reset) {
 			// second write, if requested
-			r = _write(is_write_a ? nvram->dev_b : nvram->dev_a, buf, size);
+			r = _write(nvram->interface, is_write_a ? nvram->priv_b : nvram->priv_a, buf, size);
 		}
 	}
 	if (r) {
@@ -220,11 +227,11 @@ void nvram_close(struct nvram** nvram)
 {
 	if (nvram && *nvram) {
 		struct nvram *pnvram = *nvram;
-		if (pnvram->dev_a) {
-			nvram_interface_destroy(&pnvram->dev_a);
+		if (pnvram->priv_a) {
+			pnvram->interface->destroy(&pnvram->priv_a);
 		}
-		if (pnvram->dev_b) {
-			nvram_interface_destroy(&pnvram->dev_b);
+		if (pnvram->priv_b) {
+			pnvram->interface->destroy(&pnvram->priv_b);
 		}
 		free(*nvram);
 		*nvram = NULL;

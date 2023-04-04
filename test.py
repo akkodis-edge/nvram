@@ -24,16 +24,17 @@ class test_user_base(unittest.TestCase):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.dir = self.tmpdir.name
         self.env = {
-                'NVRAM_SYSTEM_A': f'{self.dir}/system_a',
-                'NVRAM_SYSTEM_B': f'{self.dir}/system_b',
-                'NVRAM_USER_A': f'{self.dir}/user_a',
-                'NVRAM_USER_B': f'{self.dir}/user_b',
+                'NVRAM_INTERFACE': 'file',
+                'NVRAM_FILE_SYSTEM_A': f'{self.dir}/system_a',
+                'NVRAM_FILE_SYSTEM_B': f'{self.dir}/system_b',
+                'NVRAM_FILE_USER_A': f'{self.dir}/user_a',
+                'NVRAM_FILE_USER_B': f'{self.dir}/user_b',
             }
         self.sys = False
     
     def tearDown(self):
-        self.assertFalse(os.path.isfile(self.env['NVRAM_SYSTEM_A']))
-        self.assertFalse(os.path.isfile(self.env['NVRAM_SYSTEM_B']))
+        self.assertFalse(os.path.isfile(self.env['NVRAM_FILE_SYSTEM_A']))
+        self.assertFalse(os.path.isfile(self.env['NVRAM_FILE_SYSTEM_B']))
         self.tmpdir.cleanup()
         
     def nvram_set(self, pairs):
@@ -148,8 +149,8 @@ class test_system_base(test_user_base):
         self.env['NVRAM_SYSTEM_UNLOCK'] = '16440'
     
     def tearDown(self):
-        self.assertFalse(os.path.isfile(self.env['NVRAM_USER_A']))
-        self.assertFalse(os.path.isfile(self.env['NVRAM_USER_B']))
+        self.assertFalse(os.path.isfile(self.env['NVRAM_FILE_USER_A']))
+        self.assertFalse(os.path.isfile(self.env['NVRAM_FILE_USER_B']))
         self.tmpdir.cleanup()
 
 class test_system_set_get(test_system_base):
@@ -260,10 +261,10 @@ class test_mixed_base(test_user_base):
 
 class test_mixed_list(test_mixed_base):
     def tearDown(self):
-        self.assertTrue(os.path.isfile(self.env['NVRAM_SYSTEM_A']))
-        self.assertTrue(os.path.isfile(self.env['NVRAM_SYSTEM_B']))
-        self.assertTrue(os.path.isfile(self.env['NVRAM_USER_A']))
-        self.assertTrue(os.path.isfile(self.env['NVRAM_USER_B']))
+        self.assertTrue(os.path.isfile(self.env['NVRAM_FILE_SYSTEM_A']))
+        self.assertTrue(os.path.isfile(self.env['NVRAM_FILE_SYSTEM_B']))
+        self.assertTrue(os.path.isfile(self.env['NVRAM_FILE_USER_A']))
+        self.assertTrue(os.path.isfile(self.env['NVRAM_FILE_USER_B']))
         super().tearDown()
         
     def test_list(self):
@@ -287,8 +288,8 @@ class test_mixed_list(test_mixed_base):
 
 class test_mixed_delete(test_mixed_base):
     def tearDown(self):
-        self.assertTrue(os.path.isfile(self.env['NVRAM_SYSTEM_A']))
-        self.assertTrue(os.path.isfile(self.env['NVRAM_USER_A']))
+        self.assertTrue(os.path.isfile(self.env['NVRAM_FILE_SYSTEM_A']))
+        self.assertTrue(os.path.isfile(self.env['NVRAM_FILE_USER_A']))
         super().tearDown()
         
     def test_delete_user(self):
@@ -325,10 +326,10 @@ class test_single_section(test_user_base):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.dir = self.tmpdir.name
         self.env = {
-                'NVRAM_SYSTEM_A': f'{self.dir}/system_a',
-                'NVRAM_SYSTEM_B': f'{self.dir}/system_b',
-                'NVRAM_USER_A': '',
-                'NVRAM_USER_B': '',
+                'NVRAM_FILE_SYSTEM_A': f'{self.dir}/system_a',
+                'NVRAM_FILE_SYSTEM_B': f'{self.dir}/system_b',
+                'NVRAM_FILE_USER_A': '',
+                'NVRAM_FILE_USER_B': '',
             }
         self.sys = False
         
@@ -336,7 +337,7 @@ class test_single_section(test_user_base):
         self.tmpdir.cleanup()
         
     def test_single_a(self):
-        self.env['NVRAM_USER_A'] = f'{self.dir}/user_a'
+        self.env['NVRAM_FILE_USER_A'] = f'{self.dir}/user_a'
         attributes = {}
         for i in range(10):
             key = f'key{i}'
@@ -352,7 +353,7 @@ class test_single_section(test_user_base):
         self.assertFalse(os.path.isfile(f'{self.dir}/user_b'))
             
     def test_single_b(self):
-        self.env['NVRAM_USER_B'] = f'{self.dir}/user_b'
+        self.env['NVRAM_FILE_USER_B'] = f'{self.dir}/user_b'
         attributes = {}
         for i in range(10):
             key = f'key{i}'
