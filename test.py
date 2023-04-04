@@ -7,7 +7,7 @@ import subprocess
 from subprocess import CalledProcessError
 
 def nvram(env, arglist, sys=False):
-    args = ['./nvram']
+    args = ['./build/nvram']
     if sys:
         args.append('--sys')
     args.extend(arglist)

@@ -1,6 +1,9 @@
-
-CC ?= gcc
 INSTALL_PATH ?= /usr/sbin
+BUILD ?= build
+
+ifeq ($(abspath $(BUILD)),$(shell pwd)) 
+$(error "ERROR: Build dir can't be equal to source dir")
+endif
 
 NVRAM_SRC_VERSION := $(shell git describe --dirty --always --tags)
 CFLAGS += -DSRC_VERSION=$(NVRAM_SRC_VERSION)
@@ -57,20 +60,18 @@ endif
 all: nvram
 .PHONY : all
 
-nvram : $(OBJS)
+.PHONY: nvram
+nvram: $(BUILD)/nvram
+
+$(BUILD)/nvram: $(addprefix $(BUILD)/, $(OBJS)) $(BUILD)/libnvram/libnvram.a
 	$(CC) -o $@ $^ $(LDFLAGS)
 
-.c.o:
+$(BUILD)/%.o: %.c 
+	mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-.PHONY: libnvram/libnvram.a
-libnvram/libnvram.a:
-	make -C libnvram CLANG_TIDY=no
-
-install:
-	install -m 0755 -D nvram $(INSTALL_PATH)/
+$(BUILD)/libnvram/libnvram.a:
+	make -C libnvram CLANG_TIDY=no BUILD=$(abspath $(BUILD)/libnvram/)
 
 clean:
-	rm -f *.o
-	rm -f nvram
-	make -C libnvram clean
+	rm -r $(BUILD)
