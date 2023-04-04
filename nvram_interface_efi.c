@@ -16,35 +16,35 @@ struct efi_header {
 
 static const struct efi_header EFI_HEADER = {0x7};
 
-struct nvram_device {
+struct nvram_priv {
 	char *path;
 };
 
-int nvram_interface_init(struct nvram_device** dev, const char* section)
+static int efi_init(struct nvram_priv** priv, const char* section)
 {
-	struct nvram_device *pbuf = malloc(sizeof(struct nvram_device));
+	struct nvram_priv *pbuf = malloc(sizeof(struct nvram_priv));
 	if (!pbuf) {
 		return -ENOMEM;
 	}
 	pbuf->path = (char*) section;
 
-	*dev = pbuf;
+	*priv = pbuf;
 
 	return 0;
 }
 
-void nvram_interface_destroy(struct nvram_device** dev)
+static void efi_destroy(struct nvram_priv** priv)
 {
-	if (*dev) {
-		free(*dev);
-		*dev = NULL;
+	if (*priv) {
+		free(*priv);
+		*priv = NULL;
 	}
 }
 
-int nvram_interface_size(struct nvram_device* dev, size_t* size)
+static int efi_size(const struct nvram_priv* priv, size_t* size)
 {
 	struct stat sb;
-	if (stat(dev->path, &sb)) {
+	if (stat(priv->path, &sb)) {
 		switch (errno) {
 		case ENOENT:
 			*size = 0;
@@ -62,14 +62,14 @@ int nvram_interface_size(struct nvram_device* dev, size_t* size)
 	return 0;
 }
 
-int nvram_interface_read(struct nvram_device* dev, uint8_t* buf, size_t size)
+static int efi_read(struct nvram_priv* priv, uint8_t* buf, size_t size)
 {
 	if (!buf) {
 		return -EINVAL;
 	}
 
 	int r = 0;
-	int fd = open(dev->path, O_RDONLY);
+	int fd = open(priv->path, O_RDONLY);
 	if (fd < 0) {
 		return -errno;
 	}
@@ -121,7 +121,7 @@ static int set_immutable(const char* path, bool value)
 	return 0;
 }
 
-int nvram_interface_write(struct nvram_device* dev, const uint8_t* buf, size_t size)
+static int efi_write(struct nvram_priv* priv, const uint8_t* buf, size_t size)
 {
 	if (!buf) {
 		return -EINVAL;
@@ -130,12 +130,12 @@ int nvram_interface_write(struct nvram_device* dev, const uint8_t* buf, size_t s
 	uint8_t* pbuf = NULL;
 	int r = 0;
 
-	r = set_immutable(dev->path, false);
+	r = set_immutable(priv->path, false);
 	if (r) {
 		return r;
 	}
 
-	int fd = open(dev->path, O_WRONLY | O_CREAT, S_IWUSR | S_IRUSR);
+	int fd = open(priv->path, O_WRONLY | O_CREAT, S_IWUSR | S_IRUSR);
 	if (fd < 0) {
 		r = -errno;
 		goto exit;
@@ -164,13 +164,24 @@ int nvram_interface_write(struct nvram_device* dev, const uint8_t* buf, size_t s
 	r = 0;
 
 exit:
-	set_immutable(dev->path, true);
+	set_immutable(priv->path, true);
 	free(pbuf);
 	close(fd);
 	return r;
 }
 
-const char* nvram_interface_section(const struct nvram_device* dev)
+static const char* efi_section(const struct nvram_priv* priv)
 {
-	return dev->path;
+	return priv->path;
 }
+
+/* Exposed by nvram_interface.c */
+struct nvram_interface nvram_efi_interface =
+{
+	.init = efi_init,
+	.destroy = efi_destroy,
+	.size = efi_size,
+	.read = efi_read,
+	.write = efi_write,
+	.section = efi_section,
+};

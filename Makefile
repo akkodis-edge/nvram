@@ -48,20 +48,18 @@ CFLAGS += -DNVRAM_MTD_USER_A=$(NVRAM_MTD_USER_A)
 CFLAGS += -DNVRAM_MTD_USER_B=$(NVRAM_MTD_USER_B)
 endif
 
-#ifeq ($(NVRAM_INTERFACE_TYPE), efi)
-#OBJS += nvram_interface_efi.o
-#LDFLAGS += -le2p
-#NVRAM_SYSTEM_A ?= /sys/firmware/efi/efivars/604dafe4-587a-47f6-8604-3d33eb83da3d-system
-#NVRAM_USER_A ?= /sys/firmware/efi/efivars/604dafe4-587a-47f6-8604-3d33eb83da3d-user
-#endif
-
-
-#CFLAGS += -DNVRAM_SYSTEM_A=$(NVRAM_SYSTEM_A)
-#CFLAGS += -DNVRAM_SYSTEM_B=$(NVRAM_SYSTEM_B)
-#CFLAGS += -DNVRAM_USER_A=$(NVRAM_USER_A)
-#CFLAGS += -DNVRAM_USER_B=$(NVRAM_USER_B)
-
-
+ifeq ($(NVRAM_INTERFACE_EFI), ON)
+OBJS += nvram_interface_efi.o
+LDFLAGS += -le2p
+NVRAM_EFI_SYSTEM_A ?= /sys/firmware/efi/efivars/604dafe4-587a-47f6-8604-3d33eb83da3d-system
+NVRAM_EFI_SYSTEM_B ?= 
+NVRAM_EFI_USER_A ?= /sys/firmware/efi/efivars/604dafe4-587a-47f6-8604-3d33eb83da3d-user
+NVRAM_EFI_USER_B ?= 
+CFLAGS += -DNVRAM_EFI_SYSTEM_A=$(NVRAM_EFI_SYSTEM_A)
+CFLAGS += -DNVRAM_EFI_SYSTEM_B=$(NVRAM_EFI_SYSTEM_B)
+CFLAGS += -DNVRAM_EFI_USER_A=$(NVRAM_EFI_USER_A)
+CFLAGS += -DNVRAM_EFI_USER_B=$(NVRAM_EFI_USER_B)
+endif
 
 all: nvram
 .PHONY : all
