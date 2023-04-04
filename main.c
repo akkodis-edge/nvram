@@ -9,7 +9,7 @@
 #include <inttypes.h>
 #include <limits.h>
 #include "log.h"
-#include "nvram.h"
+#include "nvram_format.h"
 #include "nvram_interface.h"
 #include "libnvram/libnvram.h"
 
@@ -17,6 +17,7 @@
 #define str(a) #a
 
 #define NVRAM_ENV_INTERFACE "NVRAM_INTERFACE"
+#define NVRAM_ENV_FORMAT "NVRAM_FORMAT"
 #define NVRAM_PROGRAM_NAME "nvram"
 #define NVRAM_LOCKFILE "/run/lock/nvram.lock"
 #define NVRAM_ENV_DEBUG "NVRAM_DEBUG"
@@ -380,6 +381,12 @@ int main(int argc, char** argv)
 		fprintf(stderr, "Unresolved interface: %s\n", interface_name);
 		return EINVAL;
 	}
+	const char* format_name = get_env_str(NVRAM_ENV_FORMAT, xstr(NVRAM_FORMAT_DEFAULT));
+	struct nvram_format* format = nvram_get_format(format_name);
+	if (format == NULL) {
+		fprintf(stderr, "Unresolved format: %s\n", format_name);
+		return EINVAL;
+	}
 
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp("--set", argv[i]) || !strcmp("set", argv[i])) {
@@ -517,7 +524,7 @@ int main(int argc, char** argv)
 	pr_dbg("NVRAM_SYSTEM_A: %s\n", nvram_system_a);
 	pr_dbg("NVRAM_SYSTEM_B: %s\n", nvram_system_b);
 
-	r = nvram_init(&nvram_system, interface, &list_system, nvram_system_a, nvram_system_b);
+	r = format->init(&nvram_system, interface, &list_system, nvram_system_a, nvram_system_b);
 	if (r) {
 		goto exit;
 	}
@@ -526,7 +533,7 @@ int main(int argc, char** argv)
 		const char *nvram_user_b = nvram_get_interface_section(interface_name, USER_B);
 		pr_dbg("NVRAM_USER_A: %s\n", nvram_user_a);
 		pr_dbg("NVRAM_USER_B: %s\n", nvram_user_b);
-		r = nvram_init(&nvram_user, interface, &list_user, nvram_user_a, nvram_user_b);
+		r = format->init(&nvram_user, interface, &list_user, nvram_user_a, nvram_user_b);
 		if (r) {
 			goto exit;
 		}
@@ -573,7 +580,7 @@ int main(int argc, char** argv)
 
 	if (write_performed) {
 		pr_dbg("Commit changes\n");
-		r = nvram_commit(opts.system_mode ? nvram_system : nvram_user, opts.system_mode ? list_system : list_user);
+		r = format->commit(opts.system_mode ? nvram_system : nvram_user, opts.system_mode ? list_system : list_user);
 		if (r) {
 			goto exit;
 		}
@@ -589,7 +596,7 @@ exit:
 	if (list_user) {
 		destroy_libnvram_list(&list_user);
 	}
-	nvram_close(&nvram_system);
-	nvram_close(&nvram_user);
+	format->close(&nvram_system);
+	format->close(&nvram_user);
 	return -r;
 }

@@ -5,7 +5,7 @@
 #include <errno.h>
 #include <sys/types.h>
 #include "log.h"
-#include "nvram.h"
+#include "nvram_format.h"
 #include "nvram_interface.h"
 #include "libnvram/libnvram.h"
 
@@ -89,7 +89,7 @@ static int init_and_read(struct nvram_interface* interface, struct nvram_priv** 
 	return 0;
 }
 
-int nvram_init(struct nvram** nvram, struct nvram_interface* interface, struct libnvram_list** list, const char* section_a, const char* section_b)
+static int v2_init(struct nvram** nvram, struct nvram_interface* interface, struct libnvram_list** list, const char* section_a, const char* section_b)
 {
 	if (interface == NULL || interface->init == NULL || interface->destroy == NULL
 		|| interface->size == NULL || interface->read == NULL
@@ -171,7 +171,7 @@ static int _write(struct nvram_interface* interface, struct nvram_priv* priv, co
 	return r;
 }
 
-int nvram_commit(struct nvram* nvram, const struct libnvram_list* list)
+static int v2_commit(struct nvram* nvram, const struct libnvram_list* list)
 {
 	uint8_t *buf = NULL;
 	int r = 0;
@@ -223,7 +223,7 @@ exit:
 	return r;
 }
 
-void nvram_close(struct nvram** nvram)
+static void v2_close(struct nvram** nvram)
 {
 	if (nvram && *nvram) {
 		struct nvram *pnvram = *nvram;
@@ -237,3 +237,11 @@ void nvram_close(struct nvram** nvram)
 		*nvram = NULL;
 	}
 }
+
+/* Exposed by nvram_format.c */
+struct nvram_format nvram_v2_format =
+{
+	.init = v2_init,
+	.commit = v2_commit,
+	.close = v2_close,
+};
