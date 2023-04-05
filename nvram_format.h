@@ -1,5 +1,5 @@
-#ifndef _NVRAM_FORMAT_H_
-#define _NVRAM_FORMAT_H_
+#ifndef NVRAM_FORMAT_H_
+#define NVRAM_FORMAT_H_
 
 #include <stdint.h>
 #include "libnvram/libnvram.h"
@@ -48,4 +48,4 @@ struct nvram_format {
 /* Returns NULL if not found */
 struct nvram_format* nvram_get_format(const char* format_name);
 
-#endif // _NVRAM_FORMAT_H_
+#endif // NVRAM_FORMAT_H_

@@ -1,5 +1,5 @@
-#ifndef _NVRAM_INTERFACE_H_
-#define _NVRAM_INTERFACE_H_
+#ifndef NVRAM_INTERFACE_H_
+#define NVRAM_INTERFACE_H_
 
 #include <stdint.h>
 #include <stddef.h>
@@ -94,4 +94,4 @@ enum section {
 /* Returns NULL if not found */
 const char* nvram_get_interface_section(const char* interface_name, enum section section);
 
-#endif // _NVRAM_INTERFACE_H_
+#endif // NVRAM_INTERFACE_H_

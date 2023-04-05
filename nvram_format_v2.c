@@ -161,7 +161,7 @@ exit:
 	return r;
 }
 
-static int _write(struct nvram_interface* interface, struct nvram_priv* priv, const uint8_t* buf, uint32_t size)
+static int write_buf(struct nvram_interface* interface, struct nvram_priv* priv, const uint8_t* buf, uint32_t size)
 {
 	pr_dbg("%s: write: %" PRIu32 " b\n", interface->section(priv), size);
 	int r = interface->write(priv, buf, size);
@@ -195,16 +195,16 @@ static int v2_commit(struct nvram* nvram, const struct libnvram_list* list)
 
 	if (!nvram->priv_a || !nvram->priv_b) {
 		// Transactional write disabled
-		r = _write(nvram->interface, nvram->priv_a ? nvram->priv_a : nvram->priv_b, buf, size);
+		r = write_buf(nvram->interface, nvram->priv_a ? nvram->priv_a : nvram->priv_b, buf, size);
 	}
 	else {
 		const int is_write_a = (op & LIBNVRAM_OPERATION_WRITE_A) == LIBNVRAM_OPERATION_WRITE_A;
 		const int is_counter_reset = (op & LIBNVRAM_OPERATION_COUNTER_RESET) == LIBNVRAM_OPERATION_COUNTER_RESET;
 		// first write
-		r = _write(nvram->interface, is_write_a ? nvram->priv_a : nvram->priv_b, buf, size);
+		r = write_buf(nvram->interface, is_write_a ? nvram->priv_a : nvram->priv_b, buf, size);
 		if (!r && is_counter_reset) {
 			// second write, if requested
-			r = _write(nvram->interface, is_write_a ? nvram->priv_b : nvram->priv_a, buf, size);
+			r = write_buf(nvram->interface, is_write_a ? nvram->priv_b : nvram->priv_a, buf, size);
 		}
 	}
 	if (r) {
