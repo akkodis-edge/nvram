@@ -145,15 +145,17 @@ struct operation {
 #define MAX_OP 10
 struct opts {
 	int system_mode;
+	int user_mode;
 	int op_count;
 	struct operation operations[MAX_OP];
 };
 
-static void print_usage(const char* progname, const char* interface_name)
+static void print_usage(const char* progname, const char* interface_name, const char* format_name)
 {
 	printf("%s, nvram interface, Data Respons Solutions AB\n", progname);
 	printf("Version:   %s\n", xstr(SRC_VERSION));
 	printf("Interface: %s\n", interface_name);
+	printf("Format: %s\n", format_name);
 	printf("\n");
 
 	printf("Paths:\n");
@@ -169,7 +171,14 @@ static void print_usage(const char* progname, const char* interface_name)
 	printf("\n");
 
 	printf("Options:\n");
-	printf("  --sys       ignore user section\n");
+	printf("  --sys             ignore user section\n");
+	printf("  --user            ignore sys section\n");
+	printf("  -i, --interface   select interface\n");
+	printf("  -f, --format      select format\n");
+	printf("  --user_a          set user_a section\n");
+	printf("  --user_b          set user_b section\n");
+	printf("  --sys_a           set sys_a section\n");
+	printf("  --sys_b           set sys_b section\n");
 	printf("\n");
 
 	printf("Commands:\n");
@@ -367,18 +376,15 @@ int main(int argc, char** argv)
 		enable_debug();
 	}
 
-	const char* interface_name = get_env_str(NVRAM_ENV_INTERFACE, xstr(NVRAM_INTERFACE_DEFAULT));
-	struct nvram_interface* interface = nvram_get_interface(interface_name);
-	if (interface == NULL) {
-		fprintf(stderr, "Unresolved interface: %s\n", interface_name);
-		return EINVAL;
-	}
-	const char* format_name = get_env_str(NVRAM_ENV_FORMAT, xstr(NVRAM_FORMAT_DEFAULT));
-	struct nvram_format* format = nvram_get_format(format_name);
-	if (format == NULL) {
-		fprintf(stderr, "Unresolved format: %s\n", format_name);
-		return EINVAL;
-	}
+	const char* interface_default = get_env_str(NVRAM_ENV_INTERFACE, xstr(NVRAM_INTERFACE_DEFAULT));
+	char* interface_override = NULL;
+	const char* format_default = get_env_str(NVRAM_ENV_FORMAT, xstr(NVRAM_FORMAT_DEFAULT));
+	char* format_override = NULL;
+
+	char* user_a_override = NULL;
+	char* user_b_override = NULL;
+	char* system_a_override = NULL;
+	char* system_b_override = NULL;
 
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp("--set", argv[i]) || !strcmp("set", argv[i])) {
@@ -396,8 +402,7 @@ int main(int argc, char** argv)
 			opts.op_count++;
 			i += 2;
 		}
-		else
-		if (!strcmp("--get", argv[i]) || !strcmp("get", argv[i])) {
+		else if (!strcmp("--get", argv[i]) || !strcmp("get", argv[i])) {
 			if (++i >= argc) {
 				fprintf(stderr, "Too few arguments for command get\n");
 				return EINVAL;
@@ -410,8 +415,7 @@ int main(int argc, char** argv)
 			opts.operations[opts.op_count].key = argv[i];
 			opts.op_count++;
 		}
-		else
-		if (!strcmp("--list", argv[i]) || !strcmp("list", argv[i])) {
+		else if (!strcmp("--list", argv[i]) || !strcmp("list", argv[i])) {
 			if (opts.op_count >= MAX_OP) {
 				fprintf(stderr, "Too many operations\n");
 				return EINVAL;
@@ -419,8 +423,7 @@ int main(int argc, char** argv)
 			opts.operations[opts.op_count].op = OP_LIST;
 			opts.op_count++;
 		}
-		else
-		if(!strcmp("--del", argv[i]) || !strcmp("delete", argv[i])) {
+		else if(!strcmp("--del", argv[i]) || !strcmp("delete", argv[i])) {
 			if (++i >= argc) {
 				fprintf(stderr, "Too few arguments for command delete\n");
 				return EINVAL;
@@ -433,14 +436,57 @@ int main(int argc, char** argv)
 			opts.operations[opts.op_count].key = argv[i];
 			opts.op_count++;
 		}
-		else
-		if (!strcmp("--sys", argv[i])) {
+		else if (!strcmp("--sys", argv[i])) {
 			opts.system_mode = 1;
 		}
-		else
-		if (!strcmp("-h", argv[i]) || !strcmp("--help", argv[i])) {
-			print_usage(NVRAM_PROGRAM_NAME, interface_name);
+		else if (!strcmp("--user", argv[i])) {
+			opts.user_mode = 1;
+		}
+		else if (!strcmp("-h", argv[i]) || !strcmp("--help", argv[i])) {
+			print_usage(NVRAM_PROGRAM_NAME, interface_default, format_default);
 			return 1;
+		}
+		else if (!strcmp("-f", argv[i]) || !strcmp("--format", argv[i])) {
+			if (++i >= argc) {
+				fprintf(stderr, "Too few arguments for -f, --format\n");
+				return EINVAL;
+			}
+			format_override = argv[i];
+		}
+		else if (!strcmp("-i", argv[i]) || !strcmp("--interface", argv[i])) {
+			if (++i >= argc) {
+				fprintf(stderr, "Too few arguments for -i, --interface\n");
+				return EINVAL;
+			}
+			interface_override = argv[i];
+		}
+		else if (!strcmp("--user_a", argv[i])) {
+			if (++i >= argc) {
+				fprintf(stderr, "Too few arguments for --user_a\n");
+				return EINVAL;
+			}
+			user_a_override = argv[i];
+		}
+		else if (!strcmp("--user_b", argv[i])) {
+			if (++i >= argc) {
+				fprintf(stderr, "Too few arguments for --user_b\n");
+				return EINVAL;
+			}
+			user_b_override = argv[i];
+		}
+		else if (!strcmp("--sys_a", argv[i])) {
+			if (++i >= argc) {
+				fprintf(stderr, "Too few arguments for --sys_a\n");
+				return EINVAL;
+			}
+			system_a_override = argv[i];
+		}
+		else if (!strcmp("--sys_b", argv[i])) {
+			if (++i >= argc) {
+				fprintf(stderr, "Too few arguments for --sys_b\n");
+				return EINVAL;
+			}
+			system_b_override = argv[i];
 		}
 		else {
 			fprintf(stderr, "unknown argument: %s\n", argv[i]);
@@ -448,14 +494,35 @@ int main(int argc, char** argv)
 		}
 	}
 
+	if (opts.user_mode && opts.system_mode) {
+		fprintf(stderr, "Invalid argument, can't combine --user and --sys\n");
+		return EINVAL;
+	}
+
 	if (opts.op_count == 0) {
 		opts.operations[0].op = OP_LIST;
 		opts.op_count++;
 	}
 
+	const char* interface_name = interface_override != NULL ? interface_override : interface_default;
+	struct nvram_interface* interface = nvram_get_interface(interface_name);
+	if (interface == NULL) {
+		fprintf(stderr, "Unresolved interface: %s\n", interface_name);
+		return EINVAL;
+	}
+	const char* format_name = format_override != NULL ? format_override : format_default;
+	struct nvram_format* format = nvram_get_format(format_name);
+	if (format == NULL) {
+		fprintf(stderr, "Unresolved format: %s\n", format_name);
+		return EINVAL;
+	}
+
 	int read_ops = 0;
 	int write_ops = 0;
+	pr_dbg("interface: %s\n", interface_name);
+	pr_dbg("format: %s\n", format_name);
 	pr_dbg("system_mode: %d\n", opts.system_mode);
+	pr_dbg("user_mode: %d\n", opts.user_mode);
 	for (int i = 0; i < opts.op_count; ++i) {
 		pr_dbg("operation: %d, key: %s, val: %s\n",
 				opts.operations[i].op, opts.operations[i].key, opts.operations[i].value);
@@ -511,18 +578,25 @@ int main(int argc, char** argv)
 		goto exit;
 	}
 
-	const char *nvram_system_a = nvram_get_interface_section(interface_name, SYSTEM_A);
-	const char *nvram_system_b = nvram_get_interface_section(interface_name, SYSTEM_B);
-	pr_dbg("NVRAM_SYSTEM_A: %s\n", nvram_system_a);
-	pr_dbg("NVRAM_SYSTEM_B: %s\n", nvram_system_b);
+	if (!opts.user_mode) {
+		const char *nvram_system_a = system_a_override != NULL ? system_a_override :
+										nvram_get_interface_section(interface_name, SYSTEM_A);
+		const char *nvram_system_b = system_b_override != NULL ? system_b_override :
+										nvram_get_interface_section(interface_name, SYSTEM_B);
+		pr_dbg("NVRAM_SYSTEM_A: %s\n", nvram_system_a);
+		pr_dbg("NVRAM_SYSTEM_B: %s\n", nvram_system_b);
 
-	r = format->init(&nvram_system, interface, &list_system, nvram_system_a, nvram_system_b);
-	if (r) {
-		goto exit;
+		r = format->init(&nvram_system, interface, &list_system, nvram_system_a, nvram_system_b);
+		if (r) {
+			goto exit;
+		}
 	}
+
 	if (!opts.system_mode) {
-		const char *nvram_user_a = nvram_get_interface_section(interface_name, USER_A);
-		const char *nvram_user_b = nvram_get_interface_section(interface_name, USER_B);
+		const char *nvram_user_a = user_a_override != NULL ? user_a_override :
+									nvram_get_interface_section(interface_name, USER_A);
+		const char *nvram_user_b = user_b_override != NULL ? user_b_override :
+									nvram_get_interface_section(interface_name, USER_B);
 		pr_dbg("NVRAM_USER_A: %s\n", nvram_user_a);
 		pr_dbg("NVRAM_USER_B: %s\n", nvram_user_b);
 		r = format->init(&nvram_user, interface, &list_user, nvram_user_a, nvram_user_b);
@@ -533,10 +607,10 @@ int main(int argc, char** argv)
 
 	int write_performed = 0;
 	if (opts.operations[0].op == OP_LIST) {
-		print_list("system", list_system);
-		if (!opts.system_mode) {
+		if (!opts.user_mode)
+			print_list("system", list_system);
+		if (!opts.system_mode)
 			print_list("user", list_user);
-		}
 	}
 	else
 	if (opts.operations[0].op == OP_GET) {
@@ -553,7 +627,7 @@ int main(int argc, char** argv)
 	else {
 		for (int i = 0; i < opts.op_count; ++i) {
 			if (opts.operations[i].op == OP_SET) {
-				pr_dbg("HEre: %d: op_count: %d\n", i, opts.op_count);
+				pr_dbg("Here: %d: op_count: %d\n", i, opts.op_count);
 				r = add_list_entry(opts.system_mode ? "system" : "user", opts.system_mode ? &list_system : &list_user, opts.operations[i].key, opts.operations[i].value);
 				if (r < 0)
 					goto exit;
