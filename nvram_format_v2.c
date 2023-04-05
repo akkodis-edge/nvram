@@ -94,7 +94,7 @@ static int v2_init(struct nvram** nvram, struct nvram_interface* interface, stru
 	if (interface == NULL || interface->init == NULL || interface->destroy == NULL
 		|| interface->size == NULL || interface->read == NULL
 		|| interface->write == NULL || interface->section == NULL)
-		return EINVAL;
+		return -EINVAL;
 
 	uint8_t *buf_a = NULL;
 	size_t size_a = 0;

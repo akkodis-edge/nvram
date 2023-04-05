@@ -10,12 +10,19 @@
 /* nvram_format_v2.c*/
 extern struct nvram_format nvram_v2_format;
 #endif
-
+#if NVRAM_FORMAT_LEGACY > 0
+/* nvram_format_legacy.c*/
+extern struct nvram_format nvram_legacy_format;
+#endif
 struct nvram_format* nvram_get_format(const char* format_name)
 {
 #if NVRAM_FORMAT_V2 > 0
 	if (!strcmp("v2", format_name))
 		return &nvram_v2_format;
+#endif
+#if NVRAM_FORMAT_LEGACY > 0
+	if (!strcmp("legacy", format_name))
+		return &nvram_legacy_format;
 #endif
 	return NULL;
 }
