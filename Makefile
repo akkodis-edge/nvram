@@ -1,4 +1,3 @@
-INSTALL_PATH ?= /usr/sbin
 BUILD ?= build
 
 ifeq ($(abspath $(BUILD)),$(shell pwd)) 
@@ -13,6 +12,17 @@ ifeq ($(NVRAM_USE_SANITIZER), 1)
 	CFLAGS += -fsanitize=address -fsanitize=undefined
 	LDFLAGS += -fsanitize=address -fsanitize=undefined
 endif
+CLANG_TIDY_CHECKS_LIST = -*
+CLANG_TIDY_CHECKS_LIST += clang-analyzer-*
+CLANG_TIDY_CHECKS_LIST += bugprone-*
+CLANG_TIDY_CHECKS_LIST += cppcoreguidelines-*
+CLANG_TIDY_CHECKS_LIST += portability-*
+CLANG_TIDY_CHECKS_LIST += readability-*
+CLANG_TIDY_CHECKS_LIST += -readability-braces-around-statements
+CLANG_TIDY_CHECKS_LIST += -readability-function-cognitive-complexity
+space := $() $()
+comma := ,
+CLANG_TIDY_CHECKS ?= $(subst $(space),$(comma),$(CLANG_TIDY_CHECKS_LIST))
 
 NVRAM_INTERFACE_DEFAULT ?= file
 NVRAM_INTERFACE_FILE ?= 1
@@ -87,6 +97,10 @@ $(BUILD)/nvram: $(addprefix $(BUILD)/, $(OBJS))
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/%.o: %.c 
+ifeq ($(NVRAM_CLANG_TIDY), 1)
+	clang-tidy $< -header-filter=.* \
+		-checks=$(CLANG_TIDY_CHECKS) -- $<
+endif
 	mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
