@@ -412,6 +412,95 @@ class test_legacy_api(test_user_base):
         self.nvram_legacy_delete([key])
         with self.assertRaises(CalledProcessError):
             self.nvram_legacy_get(key)
+            
+class test_legacy_format(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.dir = self.tmpdir.name
+        self.env = {
+                'NVRAM_FORMAT': 'legacy',
+                'NVRAM_FILE_SYSTEM_A': f'{self.dir}/system_a',
+                'NVRAM_FILE_SYSTEM_B': '',
+                'NVRAM_FILE_USER_A': f'{self.dir}/user_a',
+                'NVRAM_FILE_USER_B': '',
+            }
+        self.sys = False
+    
+    def tearDown(self):
+        self.assertFalse(os.path.isfile(self.env['NVRAM_FILE_SYSTEM_A']))
+        self.tmpdir.cleanup()
+        
+    def nvram_set(self, pairs):
+        args = []
+        for key, val in pairs:
+            args.extend(['--set', key, val])
+        nvram(self.env, args, sys=self.sys)
+        
+    def nvram_get(self, key):
+        return nvram(self.env, ['--get', key], sys=self.sys).rstrip()
+    
+    def read_user_a(self):
+        with open(self.env['NVRAM_FILE_USER_A'], 'r') as f:
+            return f.read()
 
+    def write_user_a(self, buf):
+        with open(self.env['NVRAM_FILE_USER_A'], 'w') as f:
+            f.write(buf)
+
+    def test_write(self):
+        key1 = 'key1'
+        val1 = 'val1'
+        self.nvram_set([(key1, val1)])
+        expects = f'{key1}={val1}\n'
+        self.assertEqual(expects, self.read_user_a())
+        
+    def test_append(self):
+        key1 = 'key1'
+        val1 = 'val1'
+        key2 = 'key2'
+        val2 = 'val2'
+        self.write_user_a(f'{key1}={val1}\n')
+        self.nvram_set([(key2, val2)])
+        expects = f'{key1}={val1}\n{key2}={val2}\n'
+        self.assertEqual(expects, self.read_user_a())
+        
+    def test_get(self):
+        key1 = 'key1'
+        val1 = 'val1'
+        self.write_user_a(f'{key1}={val1}\n')
+        self.assertEqual(val1, self.nvram_get(key1))
+        
+    def test_get_multi(self):
+        key1 = 'key1'
+        val1 = 'val1'
+        key2 = 'key2'
+        val2 = 'val2'
+        self.write_user_a(f'{key1}={val1}\n{key2}={val2}\n')
+        self.assertEqual(val1, self.nvram_get(key1))
+        self.assertEqual(val2, self.nvram_get(key2))
+        
+    def test_no_terminating_newline(self):
+        key1 = 'key1'
+        val1 = 'val1'
+        self.write_user_a(f'{key1}={val1}')
+        self.assertEqual(val1, self.nvram_get(key1))
+        
+    def test_errors(self):
+        self.write_user_a(f'key1=val1\nkey2')
+        with self.assertRaises(CalledProcessError):
+            self.nvram_get('key1')
+        self.write_user_a(f'key1\n')
+        with self.assertRaises(CalledProcessError):
+            self.nvram_get('key1')
+        self.write_user_a(f'key1')
+        with self.assertRaises(CalledProcessError):
+            self.nvram_get('key1')
+        self.write_user_a(f'key1=')
+        with self.assertRaises(CalledProcessError):
+            self.nvram_get('key1')
+        self.write_user_a(f'key1=\n')
+        with self.assertRaises(CalledProcessError):
+            self.nvram_get('key1')
+            
 if __name__ == '__main__':
     unittest.main()
