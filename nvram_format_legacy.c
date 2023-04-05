@@ -13,37 +13,35 @@ struct nvram {
 	struct nvram_priv* interface_priv;
 };
 
-/* Returns pos of key in buf. */
-/* Empty values are not supported and thus
- * a return value of 0 marks not found or too short */
-static size_t find(uint8_t* buf, size_t buf_size, uint8_t key)
+#define NPOS SIZE_MAX
+
+/* Returns pos of key in buf or NPOS if not found */
+static size_t find(const uint8_t* buf, size_t buf_size, uint8_t key)
 {
 	for (size_t pos = 0; pos < buf_size; ++pos) {
 		if (buf[pos] == key)
 				return pos;
 	}
-	return 0;
+	return NPOS;
 }
 
-/* entry->key and entry->value must be freed by caller */
-static int append_null_terminator(struct libnvram_entry* entry)
+/* new entry must be freed by caller */
+static int append_null_terminator(struct libnvram_entry* new, const struct libnvram_entry* from)
 {
-	uint8_t* key_buf = malloc(entry->key_len + 1);
-	if (key_buf == NULL)
+	new->key_len = from->key_len + 1;
+	new->key = malloc(new->key_len);
+	if (new->key == NULL)
 		return -ENOMEM;
-	uint8_t* value_buf = malloc(entry->value_len + 1);
-	if (value_buf == NULL) {
-		free(key_buf);
+	new->value_len = from->value_len + 1;
+	new->value = malloc(new->value_len);
+	if (new->value == NULL) {
+		free(new->key);
 		return -ENOMEM;
 	}
-	memcpy(key_buf, entry->key, entry->key_len);
-	key_buf[entry->key_len] = '\0';
-	memcpy(value_buf, entry->value, entry->value_len);
-	value_buf[entry->value_len] = '\0';
-	entry->key = key_buf;
-	entry->key_len++;
-	entry->value = value_buf;
-	entry->value_len++;
+	memcpy(new->key, from->key, from->key_len);
+	new->key[from->key_len] = '\0';
+	memcpy(new->value, from->value, from->value_len);
+	new->value[from->value_len] = '\0';
 	return 0;
 }
 
@@ -53,28 +51,31 @@ static size_t find_entry(struct libnvram_entry* entry, uint8_t* buf, size_t buf_
 {
 	const size_t key_start = 0;
 	const size_t key_end = find(buf + key_start, buf_size - key_start, '=');
-	if (key_end == 0 || key_end > buf_size)
+	/* empty key or not found */
+	if (key_end == 0 || key_end == NPOS)
 		return 0;
 	/* verify no newline in key */
-	if (find(buf + key_start, key_end - key_start, '\n') != 0)
+	if (find(buf + key_start, key_end - key_start, '\n') != NPOS)
 		return 0;
+	/* skip '=' for value start */
 	const size_t value_start = key_end + 1;
 	/* No space left for value */
 	if (value_start >= buf_size)
 		return 0;
 	const size_t r = find(buf + value_start, buf_size - value_start, '\n');
-	/* Value empty if return 0 and last value is newline */
-	if (r == 0 && buf[buf_size - 1] == '\n')
+	/* empty value */
+	if (r == 0)
 		return 0;
-	/* No terminating newline at end-of-file if 0 and last char not newline */
-	const size_t value_end = r == 0 ? buf_size : value_start + r;
+	/* Set value to remaining buf if no terminating newline */
+	const size_t value_end = r == NPOS ? buf_size : value_start + r;
+
 	entry->key = buf + key_start;
 	entry->key_len = key_end - key_start;
 	entry->value = buf + value_start;
 	entry->value_len = value_end - value_start;
-	if (append_null_terminator(entry) != 0)
-		return -ENOMEM;
-	return value_end + 1;
+
+	/* skip newline from pos unless end of buf */
+	return value_end < buf_size ? value_end + 1 : value_end;
 }
 
 static int populate_list(struct libnvram_list** list, uint8_t* buf, size_t buf_size)
@@ -87,13 +88,17 @@ static int populate_list(struct libnvram_list** list, uint8_t* buf, size_t buf_s
 			pos++;
 		}
 		else {
-			size_t r = find_entry(&entry, buf + pos, buf_size - pos);
+			const size_t r = find_entry(&entry, buf + pos, buf_size - pos);
 			if (r == 0)
 				return -EINVAL;
-			if (libnvram_list_set(list, &entry) != 0)
+			struct libnvram_entry new;
+			if (append_null_terminator(&new, &entry) != 0)
 				return -ENOMEM;
-			free(entry.key);
-			free(entry.value);
+			const int added = libnvram_list_set(list, &new);
+			free(new.key);
+			free(new.value);
+			if (added != 0)
+				return -ENOMEM;
 			pos	+= r;
 		}
 	}
