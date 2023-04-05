@@ -108,4 +108,4 @@ $(BUILD)/libnvram/libnvram.a:
 	make -C libnvram CLANG_TIDY=no BUILD=$(abspath $(BUILD)/libnvram/)
 
 clean:
-	rm -r $(BUILD)
+	rm -rf $(BUILD)
