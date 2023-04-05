@@ -89,7 +89,7 @@ static int acquire_lockfile(const char *path, int *fdlock)
                 close(fd);
                 return -r;
             }
-            else if (retries == 0) {
+            if (retries == 0) {
                 pr_err("failed locking lockfile: %s [%d]: %s\n", path, r,
                        strerror(ETIMEDOUT));
                 close(fd);
@@ -192,14 +192,11 @@ enum print_options {
 
 static size_t calc_size(const uint32_t len, int is_str)
 {
-	if (is_str) {
-		// null-terminator ignored
+	if (is_str) // null-terminator ignored
 		return len - 1;
-	}
-	else {
-		// prefix "0x" + every byte represtended by 2 char in hex
-		return 2 + len * 2;
-	}
+	// prefix "0x" + every byte represtended by 2 char in hex
+	return 2 + len * 2;
+
 }
 
 // return bytes written, negative errno for error
@@ -207,23 +204,18 @@ static int append_hex(char* str, size_t size, uint8_t* data, uint32_t len)
 {
 	int bytes = 0;
 	int r = snprintf(str, size, "0x");
-	if (r < 0) {
+	if (r < 0)
 		return -errno;
-	}
-	else
-	if (r != 2) {
+	if (r != 2)
 		return -EFAULT;
-	}
+
 	bytes += r;
 	for (uint32_t i = 0; i < len; ++i) {
 		r = snprintf(str + bytes, size - bytes, "%02" PRIx8 "", data[i]);
-		if (r < 0) {
+		if (r < 0)
 			return -errno;
-		}
-		else
-		if (r != 2) {
+		if (r != 2)
 			return -EFAULT;
-		}
 		bytes += r;
 	}
 
