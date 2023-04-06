@@ -45,10 +45,10 @@ OBJS = log.o main.o nvram_format.o nvram_interface.o libnvram/libnvram.a
 
 ifeq ($(NVRAM_INTERFACE_FILE), 1)
 OBJS += nvram_interface_file.o
-NVRAM_FILE_SYSTEM_A ?= /home/lelle/nvram/system_a
-NVRAM_FILE_SYSTEM_B ?= 
-NVRAM_FILE_USER_A ?= /home/lelle/nvram/user_a
-NVRAM_FILE_USER_B ?= 
+NVRAM_FILE_SYSTEM_A ?= /var/nvram/system_a
+NVRAM_FILE_SYSTEM_B ?= /var/nvram/system_b
+NVRAM_FILE_USER_A ?= /var/nvram/user_a
+NVRAM_FILE_USER_B ?= /var/nvram/user_b
 CFLAGS += -DNVRAM_FILE_SYSTEM_A=$(NVRAM_FILE_SYSTEM_A)
 CFLAGS += -DNVRAM_FILE_SYSTEM_B=$(NVRAM_FILE_SYSTEM_B)
 CFLAGS += -DNVRAM_FILE_USER_A=$(NVRAM_FILE_USER_A)
