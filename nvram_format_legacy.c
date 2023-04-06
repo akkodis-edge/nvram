@@ -179,6 +179,18 @@ static int legacy_commit(struct nvram* nvram, const struct libnvram_list* list)
 	/* Calculate needed buffer for entries in list */
 	for (libnvram_list_it it = libnvram_list_begin(list); it != libnvram_list_end(list); it = libnvram_list_next(it)) {
 		const struct libnvram_entry* entry = libnvram_list_deref(it);
+		if (find(entry->key, entry->key_len, '=') != NPOS) {
+			pr_err("legacy format: key contains invalid character \"=\"\n");
+			return -EINVAL;
+		}
+		if (find(entry->key, entry->key_len, '\n') != NPOS) {
+			pr_err("legacy format: key contains invalid character \"\\n\"\n");
+			return -EINVAL;
+		}
+		if (find(entry->value, entry->value_len, '\n') != NPOS) {
+			pr_err("legacy format: value contains invalid character \"\\n\"\n");
+			return -EINVAL;
+		}
 		/* legacy format only supports strings and all entries should be null-terminated */
 		int r = snprintf(NULL, 0, row_format, entry->key, entry->value);
 		if (r < 0)
