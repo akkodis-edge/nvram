@@ -3,26 +3,33 @@
 #include <stdlib.h>
 #include "nvram_interface.h"
 
-#define xstr(a) str(a)
-#define str(a) #a
-
-#if NVRAM_FORMAT_V2 > 0
 /* nvram_format_v2.c*/
 extern struct nvram_format nvram_v2_format;
-#endif
-#if NVRAM_FORMAT_LEGACY > 0
 /* nvram_format_legacy.c*/
 extern struct nvram_format nvram_legacy_format;
-#endif
-struct nvram_format* nvram_get_format(const char* format_name)
-{
+
+struct format_desc {
+	char* name;
+	struct nvram_format* format;
+};
+
+struct format_desc available_formats[] = {
 #if NVRAM_FORMAT_V2 > 0
-	if (!strcmp("v2", format_name))
-		return &nvram_v2_format;
+		{.name = "v2", .format = &nvram_v2_format},
 #endif
 #if NVRAM_FORMAT_LEGACY > 0
-	if (!strcmp("legacy", format_name))
-		return &nvram_legacy_format;
+		{.name = "legacy", .format = &nvram_legacy_format},
 #endif
+		{.name = NULL},
+};
+
+struct nvram_format* nvram_get_format(const char* format_name)
+{
+	struct format_desc* desc = &available_formats[0];
+	while (desc->name != NULL) {
+		if (strcmp(desc->name, format_name) == 0)
+			return desc->format;
+		desc++;
+	}
 	return NULL;
 }
