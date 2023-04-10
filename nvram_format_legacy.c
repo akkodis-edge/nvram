@@ -177,7 +177,7 @@ static int legacy_commit(struct nvram* nvram, const struct libnvram_list* list)
 	const char* row_format = "%s=%s\n";
 	size_t buf_size = 0;
 	/* Calculate needed buffer for entries in list */
-	for (libnvram_list_it it = libnvram_list_begin(list); it != libnvram_list_end(list); it = libnvram_list_next(it)) {
+	for (struct libnvram_list* it = libnvram_list_begin(list); it != libnvram_list_end(list); it = libnvram_list_next(it)) {
 		const struct libnvram_entry* entry = libnvram_list_deref(it);
 		if (find(entry->key, entry->key_len, '=') != NPOS) {
 			pr_err("legacy format: key contains invalid character \"=\"\n");
@@ -206,7 +206,7 @@ static int legacy_commit(struct nvram* nvram, const struct libnvram_list* list)
 
 	/* Write buffer */
 	size_t pos = 0;
-	for (libnvram_list_it it = libnvram_list_begin(list); it != libnvram_list_end(list); it = libnvram_list_next(it)) {
+	for (struct libnvram_list* it = libnvram_list_begin(list); it != libnvram_list_end(list); it = libnvram_list_next(it)) {
 		const struct libnvram_entry* entry = libnvram_list_deref(it);
 		/* legacy format only supports strings and all entries should be null-terminated */
 		int r = snprintf((char*) buf + pos, buf_size - pos, row_format, entry->key, entry->value);
