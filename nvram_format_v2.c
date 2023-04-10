@@ -127,8 +127,7 @@ static int v2_init(struct nvram** nvram, struct nvram_interface* interface, stru
 	if ((pnvram->trans.active & LIBNVRAM_ACTIVE_A) == LIBNVRAM_ACTIVE_A) {
 		r = libnvram_deserialize(list, buf_a + libnvram_header_len(), size_a - libnvram_header_len(), &pnvram->trans.section_a.hdr);
 	}
-	else
-	if ((pnvram->trans.active & LIBNVRAM_ACTIVE_B) == LIBNVRAM_ACTIVE_B) {
+	else if ((pnvram->trans.active & LIBNVRAM_ACTIVE_B) == LIBNVRAM_ACTIVE_B) {
 		r = libnvram_deserialize(list, buf_b + libnvram_header_len(), size_b - libnvram_header_len(), &pnvram->trans.section_b.hdr);
 	}
 

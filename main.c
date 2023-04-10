@@ -239,9 +239,8 @@ static int print_list_entry(const char* list_name, const struct libnvram_list* l
 static void print_list(const char* list_name, const struct libnvram_list* list)
 {
 	pr_dbg("listing %s\n", list_name);
-	for (struct libnvram_list *cur = (struct libnvram_list*) list; cur; cur = cur->next) {
+	for (struct libnvram_list *cur = (struct libnvram_list*) list; cur; cur = cur->next)
 		print_entry(cur->entry, PRINT_KEY_AND_VALUE);
-	}
 }
 
 // return 0 for equal
@@ -524,8 +523,7 @@ int main(int argc, char** argv)
 		if (!opts.system_mode)
 			print_list("user", list_user);
 	}
-	else
-	if (opts.operations[0].op == OP_GET) {
+	else if (opts.operations[0].op == OP_GET) {
 		r = print_list_entry("system", list_system, opts.operations[0].key);
 		if (r && !opts.system_mode) {
 			r = print_list_entry("user", list_user, opts.operations[0].key);
