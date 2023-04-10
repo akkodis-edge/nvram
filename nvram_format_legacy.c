@@ -13,6 +13,17 @@ struct nvram {
 	struct nvram_priv* interface_priv;
 };
 
+static void legacy_close(struct nvram** nvram)
+{
+	if (nvram && *nvram) {
+		struct nvram *pnvram = *nvram;
+		if (pnvram->interface_priv)
+			pnvram->interface->destroy(&pnvram->interface_priv);
+		free(*nvram);
+		*nvram = NULL;
+	}
+}
+
 #define NPOS SIZE_MAX
 
 /* Returns pos of key in buf or NPOS if not found */
@@ -107,11 +118,6 @@ static int populate_list(struct libnvram_list** list, uint8_t* buf, size_t buf_s
 
 static int legacy_init(struct nvram** nvram, struct nvram_interface* interface, struct libnvram_list** list, const char* section_a, const char* section_b)
 {
-	if (interface == NULL || interface->init == NULL || interface->destroy == NULL
-		|| interface->size == NULL || interface->read == NULL
-		|| interface->write == NULL || interface->section == NULL)
-		return -EINVAL;
-
 	if (!section_a || strlen(section_a) < 1)
 		return -EINVAL;
 	if (section_b && strlen(section_b) > 0) {
@@ -160,13 +166,8 @@ static int legacy_init(struct nvram** nvram, struct nvram_interface* interface, 
 	*nvram = pnvram;
 	r = 0;
 exit:
-	if (r) {
-		if (pnvram) {
-			if (pnvram->interface_priv)
-				pnvram->interface->destroy(&pnvram->interface_priv);
-			free(pnvram);
-		}
-	}
+	if (r)
+		legacy_close(&pnvram);
 	if (buf)
 		free(buf);
 	return r;
@@ -222,17 +223,6 @@ static int legacy_commit(struct nvram* nvram, const struct libnvram_list* list)
 	if (r)
 		pr_err("%s: failed writing [%d]: %s\n", nvram->interface->section(nvram->interface_priv), -r, strerror(-r));
 	return r;
-}
-
-static void legacy_close(struct nvram** nvram)
-{
-	if (nvram && *nvram) {
-		struct nvram *pnvram = *nvram;
-		if (pnvram->interface_priv)
-			pnvram->interface->destroy(&pnvram->interface_priv);
-		free(*nvram);
-		*nvram = NULL;
-	}
 }
 
 /* Exposed by nvram_format.c */

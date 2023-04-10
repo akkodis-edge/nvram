@@ -16,6 +16,19 @@ struct nvram {
 	struct nvram_priv* priv_b;
 };
 
+static void v2_close(struct nvram** nvram)
+{
+	if (nvram && *nvram) {
+		struct nvram *pnvram = *nvram;
+		if (pnvram->priv_a)
+			pnvram->interface->destroy(&pnvram->priv_a);
+		if (pnvram->priv_b)
+			pnvram->interface->destroy(&pnvram->priv_b);
+		free(*nvram);
+		*nvram = NULL;
+	}
+}
+
 static const char* nvram_active_str(enum libnvram_active active)
 {
 	switch (active) {
@@ -91,45 +104,35 @@ static int init_and_read(struct nvram_interface* interface, struct nvram_priv** 
 
 static int v2_init(struct nvram** nvram, struct nvram_interface* interface, struct libnvram_list** list, const char* section_a, const char* section_b)
 {
-	if (interface == NULL || interface->init == NULL || interface->destroy == NULL
-		|| interface->size == NULL || interface->read == NULL
-		|| interface->write == NULL || interface->section == NULL)
-		return -EINVAL;
-
 	uint8_t *buf_a = NULL;
 	size_t size_a = 0;
 	uint8_t *buf_b = NULL;
 	size_t size_b = 0;
 	struct nvram *pnvram = (struct nvram*) malloc(sizeof(struct nvram));
-	if (!pnvram) {
+	if (!pnvram)
 		return -ENOMEM;
-	}
 	memset(pnvram, 0, sizeof(struct nvram));
 	pnvram->interface = interface;
 
 	int r = 0;
 	if (section_a && strlen(section_a) > 0) {
 		r = init_and_read(pnvram->interface, &pnvram->priv_a, section_a, LIBNVRAM_ACTIVE_A, &buf_a, &size_a);
-		if (r) {
+		if (r)
 			goto exit;
-		}
 	}
 	if (section_b && strlen(section_b) > 0) {
 		r = init_and_read(pnvram->interface, &pnvram->priv_b, section_b, LIBNVRAM_ACTIVE_B, &buf_b, &size_b);
-		if (r) {
+		if (r)
 			goto exit;
-		}
 	}
 
 	libnvram_init_transaction(&pnvram->trans, buf_a, size_a, buf_b, size_b);
 	pr_dbg("%s: active\n", nvram_active_str(pnvram->trans.active));
 	r = 0;
-	if ((pnvram->trans.active & LIBNVRAM_ACTIVE_A) == LIBNVRAM_ACTIVE_A) {
+	if ((pnvram->trans.active & LIBNVRAM_ACTIVE_A) == LIBNVRAM_ACTIVE_A)
 		r = libnvram_deserialize(list, buf_a + libnvram_header_len(), size_a - libnvram_header_len(), &pnvram->trans.section_a.hdr);
-	}
-	else if ((pnvram->trans.active & LIBNVRAM_ACTIVE_B) == LIBNVRAM_ACTIVE_B) {
+	else if ((pnvram->trans.active & LIBNVRAM_ACTIVE_B) == LIBNVRAM_ACTIVE_B)
 		r = libnvram_deserialize(list, buf_b + libnvram_header_len(), size_b - libnvram_header_len(), &pnvram->trans.section_b.hdr);
-	}
 
 	if (r) {
 		pr_err("failed deserializing data [%d]: %s\n", -r, strerror(-r));
@@ -139,23 +142,12 @@ static int v2_init(struct nvram** nvram, struct nvram_interface* interface, stru
 	*nvram = pnvram;
 
 exit:
-	if (r) {
-		if (pnvram) {
-			if (pnvram->priv_a) {
-				interface->destroy(&pnvram->priv_a);
-			}
-			if (pnvram->priv_b) {
-				interface->destroy(&pnvram->priv_b);
-			}
-			free(pnvram);
-		}
-	}
-	if (buf_a) {
+	if (r)
+		v2_close(&pnvram);
+	if (buf_a)
 		free(buf_a);
-	}
-	if (buf_b) {
+	if (buf_b)
 		free(buf_b);
-	}
 
 	return r;
 }
@@ -164,9 +156,9 @@ static int write_buf(struct nvram_interface* interface, struct nvram_priv* priv,
 {
 	pr_dbg("%s: write: %" PRIu32 " b\n", interface->section(priv), size);
 	int r = interface->write(priv, buf, size);
-	if (r) {
+	if (r)
 		pr_err("%s: failed writing %" PRIu32 " b [%d]: %s\n", interface->section(priv), size, -r, strerror(-r));
-	}
+
 	return r;
 }
 
@@ -206,9 +198,8 @@ static int v2_commit(struct nvram* nvram, const struct libnvram_list* list)
 			r = write_buf(nvram->interface, is_write_a ? nvram->priv_b : nvram->priv_a, buf, size);
 		}
 	}
-	if (r) {
+	if (r)
 		goto exit;
-	}
 
 	libnvram_update_transaction(&nvram->trans, op, &hdr);
 
@@ -220,21 +211,6 @@ exit:
 		free(buf);
 	}
 	return r;
-}
-
-static void v2_close(struct nvram** nvram)
-{
-	if (nvram && *nvram) {
-		struct nvram *pnvram = *nvram;
-		if (pnvram->priv_a) {
-			pnvram->interface->destroy(&pnvram->priv_a);
-		}
-		if (pnvram->priv_b) {
-			pnvram->interface->destroy(&pnvram->priv_b);
-		}
-		free(*nvram);
-		*nvram = NULL;
-	}
 }
 
 /* Exposed by nvram_format.c */
