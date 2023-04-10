@@ -22,6 +22,7 @@ CLANG_TIDY_CHECKS_LIST += -readability-braces-around-statements
 CLANG_TIDY_CHECKS_LIST += -readability-function-cognitive-complexity
 CLANG_TIDY_CHECKS_LIST += -cppcoreguidelines-avoid-non-const-global-variables
 CLANG_TIDY_CHECKS_LIST += -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling
+CLANG_TIDY_CHECKS_LIST += -bugprone-easily-swappable-parameters
 space := $() $()
 comma := ,
 CLANG_TIDY_CHECKS ?= $(subst $(space),$(comma),$(CLANG_TIDY_CHECKS_LIST))
