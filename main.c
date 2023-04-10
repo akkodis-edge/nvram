@@ -18,7 +18,6 @@
 
 #define NVRAM_ENV_INTERFACE "NVRAM_INTERFACE"
 #define NVRAM_ENV_FORMAT "NVRAM_FORMAT"
-#define NVRAM_PROGRAM_NAME "nvram"
 #define NVRAM_LOCKFILE "/run/lock/nvram.lock"
 #define NVRAM_ENV_DEBUG "NVRAM_DEBUG"
 #define NVRAM_ENV_SYSTEM_UNLOCK "NVRAM_SYSTEM_UNLOCK"
@@ -125,10 +124,11 @@ static int release_lockfile(const char* path, int fdlock)
 }
 
 enum op {
-	OP_LIST = 0,
-	OP_SET,
-	OP_GET,
-	OP_DEL,
+	OP_NONE = 0,
+	OP_LIST = 1 << 0,
+	OP_SET = 1 << 1,
+	OP_GET = 1 << 2,
+	OP_DEL = 1 << 3,
 };
 
 struct operation {
@@ -137,31 +137,38 @@ struct operation {
 	char* value;
 };
 
+enum mode {
+	MODE_NONE = 0,
+	MODE_USER_READ = 1 << 0,
+	MODE_USER_WRITE = 1 << 1,
+	MODE_SYSTEM_READ = 1 << 2,
+	MODE_SYSTEM_WRITE = 1 << 3,
+};
+
 #define MAX_OP 10
 struct opts {
-	int system_mode;
-	int user_mode;
+	enum mode mode;
 	int op_count;
 	struct operation operations[MAX_OP];
 };
 
-static void print_usage(const char* progname, const char* interface_name, const char* format_name)
+static void print_usage()
 {
-	printf("%s, nvram interface, Data Respons Solutions AB\n", progname);
+	const char* interface_name = xstr(NVRAM_INTERFACE_DEFAULT);
+	printf("nvram, nvram interface, Data Respons Solutions AB\n");
 	printf("Version:   %s\n", xstr(SRC_VERSION));
+	printf("\n");
+	printf("Defaults:\n");
 	printf("Interface: %s\n", interface_name);
-	printf("Format: %s\n", format_name);
+	printf("Format:    %s\n", xstr(NVRAM_FORMAT_DEFAULT));
+	printf("system_a:  %s\n", nvram_get_interface_section(interface_name, SYSTEM_A));
+	printf("system_b:  %s\n", nvram_get_interface_section(interface_name, SYSTEM_B));
+	printf("user_a:    %s\n", nvram_get_interface_section(interface_name, USER_A));
+	printf("user_b:    %s\n", nvram_get_interface_section(interface_name, USER_B));
 	printf("\n");
 
-	printf("Paths:\n");
-	printf("system_a: %s\n", nvram_get_interface_section(interface_name, SYSTEM_A));
-	printf("system_b: %s\n", nvram_get_interface_section(interface_name, SYSTEM_B));
-	printf("user_a:   %s\n", nvram_get_interface_section(interface_name, USER_A));
-	printf("user_b:   %s\n", nvram_get_interface_section(interface_name, USER_B));
-	printf("\n");
-
-	printf("Usage:   %s [OPTION] [COMMAND] [KEY] [VALUE]\n", progname);
-	printf("Example: %s set keyname value\n", progname);
+	printf("Usage:   nvram [OPTION] [COMMAND] [KEY] [VALUE]\n");
+	printf("Example: nvram set keyname value\n");
 	printf("Defaults to COMMAND list if none set\n");
 	printf("\n");
 
@@ -276,22 +283,155 @@ static int add_list_entry(const char* list_name, struct libnvram_list** list, co
 	return 1;
 }
 
+// return 0 if not found, 1 if removed
+static int remove_list_entry(const char* list_name, struct libnvram_list** list, const char* key)
+{
+	const size_t key_len = strlen(key) + 1;
+
+	pr_dbg("deleting %s: %s\n", list_name, key);
+	return libnvram_list_remove(list, (uint8_t*) key, key_len) == 1;
+}
+
+static int validate_operations(const struct opts* opts)
+{
+	enum op found_op_types = OP_NONE;
+
+	for (int i = 0; i < opts->op_count; ++i) {
+		pr_dbg("operation: %d, key: %s, val: %s\n",
+				opts->operations[i].op, opts->operations[i].key, opts->operations[i].value);
+
+		found_op_types |= opts->operations[i].op;
+
+		switch (opts->operations[i].op) {
+		case OP_SET:
+			if ((opts->mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE) {
+				if (!starts_with(opts->operations[i].key, NVRAM_SYSTEM_PREFIX)) {
+					pr_err("required prefix \"%s\" missing in system attribute\n", NVRAM_SYSTEM_PREFIX);
+					return -EINVAL;
+				}
+				if (!system_unlocked()) {
+					pr_err("system write locked\n")
+					return -EACCES;
+				}
+			}
+			if ((opts->mode & MODE_USER_WRITE) == MODE_USER_WRITE) {
+				if (starts_with(opts->operations[i].key, NVRAM_SYSTEM_PREFIX)) {
+					pr_err("forbidden prefix \"%s\" in user attribute\n", NVRAM_SYSTEM_PREFIX);
+					return -EINVAL;
+				}
+			}
+			break;
+		case OP_DEL:
+			if (((opts->mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE) && !system_unlocked()) {
+				pr_err("system write locked\n")
+				return -EACCES;
+			}
+			break;
+		case OP_NONE:
+		case OP_LIST:
+		case OP_GET:
+			break;
+		}
+	}
+
+	const int read_ops = OP_GET | OP_LIST;
+	const int write_ops = OP_SET | OP_DEL;
+	if ((found_op_types & read_ops) != 0 && (found_op_types & write_ops) != 0) {
+		pr_err("can't mix read and write operations\n");
+		return -EINVAL;
+	}
+	if ((found_op_types & OP_LIST) == OP_LIST && (found_op_types & OP_GET) == OP_GET) {
+		pr_err("can't mix --get and --list operations\n");
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static int execute_operations(const struct opts* opts, struct nvram_format* format,
+								struct nvram* nvram_system, struct libnvram_list** list_system,
+								struct nvram* nvram_user, struct libnvram_list** list_user)
+{
+	int r = 0;
+	int write_performed = 0;
+
+	for (int i = 0; i < opts->op_count; ++i) {
+		switch (opts->operations[i].op) {
+		case OP_SET:
+			r = -EINVAL;
+			if ((opts->mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE)
+				r = add_list_entry("system", list_system, opts->operations[i].key, opts->operations[i].value);
+			else if ((opts->mode & MODE_USER_WRITE) == MODE_USER_WRITE)
+				r = add_list_entry("user", list_user, opts->operations[i].key, opts->operations[i].value);
+			if (r < 0)
+				return r;
+			if (r == 1) {
+				pr_dbg("written\n");
+				write_performed = 1;
+			}
+			break;
+		case OP_DEL:
+			r = -EINVAL;
+			if ((opts->mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE)
+				r = remove_list_entry("system", list_system, opts->operations[i].key);
+			else if ((opts->mode & MODE_USER_WRITE) == MODE_USER_WRITE)
+				r = remove_list_entry("user", list_user, opts->operations[i].key);
+			if (r == 1) {
+				pr_dbg("deleted\n");
+				write_performed = 1;
+			}
+			break;
+		case OP_GET:
+			r = -ENOENT;
+			/* Prefer retrieving from system if allowed */
+			if ((opts->mode & MODE_SYSTEM_READ) == MODE_SYSTEM_READ)
+				r = print_list_entry("system", *list_system, opts->operations[i].key);
+			/* Retrieve from user if not already found and allowed */
+			if (r != 0 && (opts->mode & MODE_USER_READ) == MODE_USER_READ)
+				r = print_list_entry("user", *list_user, opts->operations[i].key);
+			if (r) {
+				pr_dbg("key not found: %s\n", opts->operations[i].key);
+				return r;
+			}
+			break;
+		case OP_LIST:
+			if ((opts->mode & MODE_SYSTEM_READ) == MODE_SYSTEM_READ)
+				print_list("system", *list_system);
+			if ((opts->mode & MODE_USER_READ) == MODE_USER_READ)
+				print_list("user", *list_user);
+			/* only perform single list operation */
+			return 0;
+		case OP_NONE:
+			break;
+		}
+	}
+
+	r = 0;
+	if (write_performed) {
+		pr_dbg("Commit changes\n");
+		if ((opts->mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE)
+			r = format->commit(nvram_system, *list_system);
+		else if ((opts->mode & MODE_USER_WRITE) == MODE_USER_WRITE)
+			r = format->commit(nvram_user, *list_user);
+		if (r)
+			pr_err("Failed committing changes [%d]: %s\n", -r, strerror(-r));
+	}
+	return r;
+}
+
 int main(int argc, char** argv)
 {
 
 	struct opts opts;
 	memset(&opts, 0, sizeof(opts));
+	opts.mode = MODE_USER_READ | MODE_USER_WRITE | MODE_SYSTEM_READ;
 
 	int r = 0;
 
 	if (get_env_long(NVRAM_ENV_DEBUG))
 		enable_debug();
 
-	const char* interface_default = get_env_str(NVRAM_ENV_INTERFACE, xstr(NVRAM_INTERFACE_DEFAULT));
 	char* interface_override = NULL;
-	const char* format_default = get_env_str(NVRAM_ENV_FORMAT, xstr(NVRAM_FORMAT_DEFAULT));
 	char* format_override = NULL;
-
 	char* user_a_override = NULL;
 	char* user_b_override = NULL;
 	char* system_a_override = NULL;
@@ -348,13 +488,13 @@ int main(int argc, char** argv)
 			opts.op_count++;
 		}
 		else if (!strcmp("--sys", argv[i])) {
-			opts.system_mode = 1;
+			opts.mode = MODE_SYSTEM_READ | MODE_SYSTEM_WRITE;
 		}
 		else if (!strcmp("--user", argv[i])) {
-			opts.user_mode = 1;
+			opts.mode = MODE_USER_READ | MODE_USER_WRITE;
 		}
 		else if (!strcmp("-h", argv[i]) || !strcmp("--help", argv[i])) {
-			print_usage(NVRAM_PROGRAM_NAME, interface_default, format_default);
+			print_usage();
 			return 1;
 		}
 		else if (!strcmp("-f", argv[i]) || !strcmp("--format", argv[i])) {
@@ -405,79 +545,33 @@ int main(int argc, char** argv)
 		}
 	}
 
-	if (opts.user_mode && opts.system_mode) {
-		fprintf(stderr, "Invalid argument, can't combine --user and --sys\n");
-		return EINVAL;
-	}
-
 	if (opts.op_count == 0) {
 		opts.operations[0].op = OP_LIST;
 		opts.op_count++;
 	}
 
-	const char* interface_name = interface_override != NULL ? interface_override : interface_default;
+	const char* interface_selected = get_env_str(NVRAM_ENV_INTERFACE, xstr(NVRAM_INTERFACE_DEFAULT));
+	const char* interface_name = interface_override != NULL ? interface_override : interface_selected;
 	struct nvram_interface* interface = nvram_get_interface(interface_name);
 	if (interface == NULL) {
 		fprintf(stderr, "Unresolved interface: %s\n", interface_name);
 		return EINVAL;
 	}
-	const char* format_name = format_override != NULL ? format_override : format_default;
+	const char* format_selected = get_env_str(NVRAM_ENV_FORMAT, xstr(NVRAM_FORMAT_DEFAULT));
+	const char* format_name = format_override != NULL ? format_override : format_selected;
 	struct nvram_format* format = nvram_get_format(format_name);
 	if (format == NULL) {
 		fprintf(stderr, "Unresolved format: %s\n", format_name);
 		return EINVAL;
 	}
 
-	int read_ops = 0;
-	int write_ops = 0;
 	pr_dbg("interface: %s\n", interface_name);
 	pr_dbg("format: %s\n", format_name);
-	pr_dbg("system_mode: %d\n", opts.system_mode);
-	pr_dbg("user_mode: %d\n", opts.user_mode);
-	for (int i = 0; i < opts.op_count; ++i) {
-		pr_dbg("operation: %d, key: %s, val: %s\n",
-				opts.operations[i].op, opts.operations[i].key, opts.operations[i].value);
-		switch (opts.operations[i].op) {
-		case OP_SET:
-			if (opts.system_mode) {
-				if (!starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX)) {
-					pr_err("required prefix \"%s\" missing in system attribute\n", NVRAM_SYSTEM_PREFIX);
-					return EINVAL;
-				}
-				if (!system_unlocked()) {
-					pr_err("system write locked\n")
-					return EACCES;
-				}
-			}
-			if (!opts.system_mode) {
-				if (starts_with(opts.operations[i].key, NVRAM_SYSTEM_PREFIX)) {
-					pr_err("forbidden prefix \"%s\" in user attribute\n", NVRAM_SYSTEM_PREFIX);
-					return EINVAL;
-				}
-			}
-			write_ops++;
-			break;
-		case OP_DEL:
-			if (opts.system_mode && !system_unlocked()) {
-				pr_err("system write locked\n")
-				return EACCES;
-			}
-			write_ops++;
-			break;
-		case OP_LIST:
-		case OP_GET:
-			read_ops++;
-			break;
-		}
-	}
-	if (read_ops > 0 && write_ops > 0) {
-		pr_err("can't mix read and write operations\n");
-		return EINVAL;
-	}
-	if (read_ops > 1) {
-		pr_err("maximum single read operation supported\n");
-		return EINVAL;
-	}
+	pr_dbg("system_mode: %d\n", (opts.mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE ? "yes" : "no");
+	pr_dbg("user_mode: %d\n", (opts.mode & MODE_USER_WRITE) == MODE_USER_WRITE ? "yes" : "no");
+	r = validate_operations(&opts);
+	if (r)
+		return -r;
 
 	struct nvram *nvram_system = NULL;
 	struct libnvram_list *list_system = NULL;
@@ -489,7 +583,7 @@ int main(int argc, char** argv)
 		goto exit;
 	}
 
-	if (!opts.user_mode) {
+	if ((opts.mode & (MODE_SYSTEM_WRITE | MODE_SYSTEM_READ)) != 0) {
 		const char *nvram_system_a = system_a_override != NULL ? system_a_override :
 										nvram_get_interface_section(interface_name, SYSTEM_A);
 		const char *nvram_system_b = system_b_override != NULL ? system_b_override :
@@ -503,7 +597,7 @@ int main(int argc, char** argv)
 		}
 	}
 
-	if (!opts.system_mode) {
+	if ((opts.mode & (MODE_USER_WRITE | MODE_USER_READ)) != 0) {
 		const char *nvram_user_a = user_a_override != NULL ? user_a_override :
 									nvram_get_interface_section(interface_name, USER_A);
 		const char *nvram_user_b = user_b_override != NULL ? user_b_override :
@@ -516,51 +610,9 @@ int main(int argc, char** argv)
 		}
 	}
 
-	int write_performed = 0;
-	if (opts.operations[0].op == OP_LIST) {
-		if (!opts.user_mode)
-			print_list("system", list_system);
-		if (!opts.system_mode)
-			print_list("user", list_user);
-	}
-	else if (opts.operations[0].op == OP_GET) {
-		r = print_list_entry("system", list_system, opts.operations[0].key);
-		if (r && !opts.system_mode) {
-			r = print_list_entry("user", list_user, opts.operations[0].key);
-		}
-		if (r) {
-			pr_dbg("key not found: %s\n", opts.operations[0].key);
-			r = -ENOENT;
-			goto exit;
-		}
-	}
-	else {
-		for (int i = 0; i < opts.op_count; ++i) {
-			if (opts.operations[i].op == OP_SET) {
-				pr_dbg("Here: %d: op_count: %d\n", i, opts.op_count);
-				r = add_list_entry(opts.system_mode ? "system" : "user", opts.system_mode ? &list_system : &list_user, opts.operations[i].key, opts.operations[i].value);
-				if (r < 0)
-					goto exit;
-				if (r == 1) {
-					pr_dbg("written\n");
-					write_performed = 1;
-				}
-			}
-			if (opts.operations[i].op == OP_DEL) {
-				pr_dbg("deleting %s: %s\n", opts.system_mode ? "system" : "user", opts.operations[i].key);
-				if(libnvram_list_remove(opts.system_mode ? &list_system : &list_user, (uint8_t*) opts.operations[i].key, strlen(opts.operations[i].key) + 1))
-					write_performed = 1;
-			}
-		}
-	}
-
-	if (write_performed) {
-		pr_dbg("Commit changes\n");
-		r = format->commit(opts.system_mode ? nvram_system : nvram_user, opts.system_mode ? list_system : list_user);
-		if (r) {
-			goto exit;
-		}
-	}
+	r = execute_operations(&opts, format, nvram_system, &list_system, nvram_user, &list_user);
+	if (r)
+		goto exit;
 
 	r = 0;
 
