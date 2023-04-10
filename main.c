@@ -50,10 +50,7 @@ static long get_env_long(const char* env)
 static int system_unlocked(void)
 {
 	const char* unlock_str = getenv(NVRAM_ENV_SYSTEM_UNLOCK);
-	if (unlock_str && strcmp(unlock_str, xstr(NVRAM_SYSTEM_UNLOCK_MAGIC))) {
-		return 1;
-	}
-	return 0;
+	return unlock_str && strcmp(unlock_str, NVRAM_SYSTEM_UNLOCK_MAGIC) == 0;
 }
 
 static int starts_with(const char* str, const char* prefix)
