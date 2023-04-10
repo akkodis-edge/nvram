@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdarg.h>
-
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static int NVDBG = 0;
 
 void enable_debug(void)
