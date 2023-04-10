@@ -30,10 +30,8 @@ static int FDLOCK = 0;
 static const char* get_env_str(const char* env, const char* def)
 {
 	const char *str = getenv(env);
-	if (str) {
+	if (str)
 		return str;
-	}
-
 	return def;
 }
 
@@ -192,129 +190,49 @@ static void print_usage(const char* progname, const char* interface_name, const 
 }
 
 enum print_options {
-	PRINT_VALUE,
-	PRINT_KEY_AND_VALUE,
+	PRINT_KEY = 1 << 0,
+	PRINT_VALUE = 1 << 2,
+	PRINT_KEY_AND_VALUE = PRINT_KEY | PRINT_VALUE,
 };
 
-static size_t calc_size(const uint32_t len, int is_str)
+static void print_arr_u8(uint8_t* data, uint32_t size)
 {
-	if (is_str) // null-terminator ignored
-		return len - 1;
-	// prefix "0x" + every byte represtended by 2 char in hex
-	return 2 + len * 2;
-
-}
-
-// return bytes written, negative errno for error
-static int append_hex(char* str, size_t size, uint8_t* data, uint32_t len)
-{
-	int bytes = 0;
-	int r = snprintf(str, size, "0x");
-	if (r < 0)
-		return -errno;
-	if (r != 2)
-		return -EFAULT;
-
-	bytes += r;
-	for (uint32_t i = 0; i < len; ++i) {
-		r = snprintf(str + bytes, size - bytes, "%02" PRIx8 "", data[i]);
-		if (r < 0)
-			return -errno;
-		if (r != 2)
-			return -EFAULT;
-		bytes += r;
+	/* Print as string if null-terminated, else as hex */
+	const int is_string = data[size - 1] == '\0';
+	if (is_string) {
+		printf("%s", data);
 	}
-
-	return bytes;
+	else {
+		printf("0x");
+		for (uint32_t i = 0; i < size; ++i)
+			printf("%02" PRIx8 "", data[i]);
+	}
 }
 
 static int print_entry(const struct libnvram_entry* entry, enum print_options opts)
 {
-	if (entry->key_len > INT_MAX || entry->value_len > INT_MAX) {
+	if (entry->key_len > INT_MAX || entry->value_len > INT_MAX)
 		return -EINVAL;
-	}
-	size_t size = 2; // min size with null-termination and newline
+	if ((opts & PRINT_KEY_AND_VALUE) == 0)
+		return -EINVAL;
 
-	const int is_key_str = entry->key[entry->key_len - 1] =='\0';
-	if (opts == PRINT_KEY_AND_VALUE) {
-		size += 1; // separate key and value with =
-		size += calc_size(entry->key_len, is_key_str);
-	}
-
-	const int is_value_str = entry->value[entry->value_len - 1] =='\0';
-	size += calc_size(entry->value_len, is_value_str);
-
-	char* str = malloc(size);
-	if (!str) {
-		return -ENOMEM;
-	}
-
-	int r = 0;
-	size_t pos = 0;
-	if (opts == PRINT_KEY_AND_VALUE) {
-		if (is_key_str) {
-			r = snprintf(str + pos, size - pos, "%s=", (char*) entry->key);
-			if (r != (int) entry->key_len) {
-				r = -errno;
-				goto exit;
-			}
-			pos += r;
-		}
-		else {
-			r = append_hex(str + pos, size - pos, entry->key, entry->key_len);
-			if (r < 0) {
-				goto exit;
-			}
-			pos += r;
-			r = snprintf(str + pos, size - pos, "=");
-			if (r != 1) {
-				r = -errno;
-				goto exit;
-			}
-			pos += r;
-		}
-	}
-
-	if (is_value_str) {
-		r = snprintf(str + pos, size - pos, "%s\n", (char*) entry->value);
-		if (r != (int) entry->value_len) {
-			r = -errno;
-			goto exit;
-		}
-		pos += r;
-	}
-	else {
-		r = append_hex(str + pos, size - pos, entry->value, entry->value_len);
-		if (r < 0) {
-			goto exit;
-		}
-		pos += r;
-		r = snprintf(str + pos, size - pos, "\n");
-		if (r != 1) {
-			r = -errno;
-			goto exit;
-		}
-		pos += r;
-	}
-
-	printf("%s", str);
-	r = 0;
-
-exit:
-	free(str);
-	return r;
+	if ((opts & PRINT_KEY) == PRINT_KEY)
+		print_arr_u8(entry->key, entry->key_len);
+	if ((opts & PRINT_KEY_AND_VALUE) == PRINT_KEY_AND_VALUE)
+		printf("=");
+	if ((opts & PRINT_VALUE) == PRINT_VALUE)
+		print_arr_u8(entry->value, entry->value_len);
+	printf("\n");
+	return 0;
 }
-
 
 // return 0 for OK or negative errno for error
 static int print_list_entry(const char* list_name, const struct libnvram_list* list, const char* key)
 {
 	pr_dbg("getting key from %s: %s\n", list_name, key);
 	struct libnvram_entry *entry = libnvram_list_get(list, (uint8_t*) key, strlen(key) + 1);
-	if (!entry) {
+	if (!entry)
 		return -ENOENT;
-	}
-
 	return print_entry(entry, PRINT_VALUE);
 }
 
@@ -329,9 +247,8 @@ static void print_list(const char* list_name, const struct libnvram_list* list)
 // return 0 for equal
 static int keycmp(const uint8_t* key1, uint32_t key1_len, const uint8_t* key2, uint32_t key2_len)
 {
-	if (key1_len == key2_len) {
+	if (key1_len == key2_len)
 		return memcmp(key1, key2, key1_len);
-	}
 	return 1;
 }
 
@@ -343,9 +260,8 @@ static int add_list_entry(const char* list_name, struct libnvram_list** list, co
 
 	pr_dbg("setting: %s: %s=%s\n", list_name, key, value);
 	struct libnvram_entry *entry = libnvram_list_get(*list, (uint8_t*) key, key_len);
-	if (entry && !keycmp(entry->value, entry->value_len, (uint8_t*) value, value_len)) {
+	if (entry && !keycmp(entry->value, entry->value_len, (uint8_t*) value, value_len))
 		return 0;
-	}
 	struct libnvram_entry new;
 	new.key = (uint8_t*) key;
 	new.key_len = key_len;
@@ -369,9 +285,8 @@ int main(int argc, char** argv)
 
 	int r = 0;
 
-	if (get_env_long(NVRAM_ENV_DEBUG)) {
+	if (get_env_long(NVRAM_ENV_DEBUG))
 		enable_debug();
-	}
 
 	const char* interface_default = get_env_str(NVRAM_ENV_INTERFACE, xstr(NVRAM_INTERFACE_DEFAULT));
 	char* interface_override = NULL;
@@ -653,12 +568,10 @@ int main(int argc, char** argv)
 
 exit:
 	release_lockfile(NVRAM_LOCKFILE, FDLOCK);
-	if (list_system) {
+	if (list_system)
 		destroy_libnvram_list(&list_system);
-	}
-	if (list_user) {
+	if (list_user)
 		destroy_libnvram_list(&list_user);
-	}
 	format->close(&nvram_system);
 	format->close(&nvram_user);
 	return -r;
