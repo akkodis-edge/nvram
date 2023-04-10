@@ -24,8 +24,6 @@
 #define NVRAM_SYSTEM_UNLOCK_MAGIC "16440"
 #define NVRAM_SYSTEM_PREFIX "SYS_"
 
-static int FDLOCK = 0;
-
 static const char* get_env_str(const char* env, const char* def)
 {
 	const char *str = getenv(env);
@@ -425,8 +423,6 @@ int main(int argc, char** argv)
 	memset(&opts, 0, sizeof(opts));
 	opts.mode = MODE_USER_READ | MODE_USER_WRITE | MODE_SYSTEM_READ;
 
-	int r = 0;
-
 	if (get_env_long(NVRAM_ENV_DEBUG))
 		enable_debug();
 
@@ -569,6 +565,9 @@ int main(int argc, char** argv)
 	pr_dbg("format: %s\n", format_name);
 	pr_dbg("system_mode: %d\n", (opts.mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE ? "yes" : "no");
 	pr_dbg("user_mode: %d\n", (opts.mode & MODE_USER_WRITE) == MODE_USER_WRITE ? "yes" : "no");
+
+	int r = 0;
+
 	r = validate_operations(&opts);
 	if (r)
 		return -r;
@@ -577,11 +576,11 @@ int main(int argc, char** argv)
 	struct libnvram_list *list_system = NULL;
 	struct nvram *nvram_user = NULL;
 	struct libnvram_list *list_user = NULL;
+	int fd_lock = 0;
 
-	r = acquire_lockfile(NVRAM_LOCKFILE, &FDLOCK);
-	if (r) {
-		goto exit;
-	}
+	fd_lock = acquire_lockfile(NVRAM_LOCKFILE, &fd_lock);
+	if (fd_lock < 0)
+		return -r;
 
 	if ((opts.mode & (MODE_SYSTEM_WRITE | MODE_SYSTEM_READ)) != 0) {
 		const char *nvram_system_a = system_a_override != NULL ? system_a_override :
@@ -617,7 +616,7 @@ int main(int argc, char** argv)
 	r = 0;
 
 exit:
-	release_lockfile(NVRAM_LOCKFILE, FDLOCK);
+	release_lockfile(NVRAM_LOCKFILE, fd_lock);
 	if (list_system)
 		destroy_libnvram_list(&list_system);
 	if (list_user)
