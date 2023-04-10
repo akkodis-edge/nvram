@@ -34,10 +34,11 @@ static const char* get_env_str(const char* env, const char* def)
 
 static long get_env_long(const char* env)
 {
+	const int base = 10;
 	const char *val = getenv(env);
 	if (val) {
 		char *endptr = NULL;
-		return strtol(val, &endptr, 10);
+		return strtol(val, &endptr, base);
 	}
 	return 0;
 }
@@ -62,8 +63,9 @@ static int starts_with(const char* str, const char* prefix)
 
 static int acquire_lockfile(const char *path, int *fdlock)
 {
+    const int allowed_retries = 10;
+    const int retry_delay_us = 10000;
     int r = 0;
-    int retries = 10;
 
     int fd = open(path, O_CREAT | O_WRONLY, S_IWUSR | S_IRUSR);
     if (fd < 0) {
@@ -72,6 +74,7 @@ static int acquire_lockfile(const char *path, int *fdlock)
         return -r;
     }
 
+    int retries = allowed_retries;
     while (retries--) {
         if (flock(fd, LOCK_EX | LOCK_NB)) {
             r = errno;
@@ -87,7 +90,7 @@ static int acquire_lockfile(const char *path, int *fdlock)
                 close(fd);
                 return -ETIMEDOUT;
             }
-            usleep(10000);
+            usleep(retry_delay_us);
         } else {
             break;
         }
