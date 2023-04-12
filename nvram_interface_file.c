@@ -3,7 +3,10 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <linux/fs.h>
+#include <sys/ioctl.h>
 #include <errno.h>
+#include "log.h"
 #include "nvram_interface.h"
 
 struct nvram_priv {
@@ -37,18 +40,40 @@ static void file_destroy(struct nvram_priv** priv)
 
 static int file_size(const struct nvram_priv* priv, size_t* size)
 {
+	/* Find out what type of file we're dealing with */
 	struct stat sb;
-	if (stat(priv->path, &sb)) {
-		switch (errno) {
-		case ENOENT:
+	if (stat(priv->path, &sb) != 0) {
+		if (errno == ENOENT) {
 			*size = 0;
 			return 0;
-		default:
-			return -errno;
 		}
+		return -errno;
 	}
 
-	*size = sb.st_size;
+	if (S_ISREG(sb.st_mode)) {
+		pr_dbg("%s: regular file\n", priv->path);
+		*size = sb.st_size;
+	}
+	else if (S_ISBLK(sb.st_mode)) {
+		pr_dbg("%s: blockdev\n", priv->path);
+		const int fd = open(priv->path, O_RDONLY);
+		if (fd < 0)
+			return -errno;
+		__u64 bytes = 0;
+		const int io_r = ioctl(fd, BLKGETSIZE64, &bytes);
+		const int io_errno = errno;
+		close(fd);
+		if (io_r != 0)
+			return -io_errno;
+		if (bytes > SIZE_MAX)
+			return -ENOMEM;
+		*size = bytes;
+	}
+	else {
+		pr_dbg("unsupported file format\n");
+		return -EOPNOTSUPP;
+	}
+
 	return 0;
 }
 
