@@ -64,7 +64,7 @@ static int starts_with_sysprefix(const char* str)
 	return 0;
 }
 
-static int acquire_lockfile(const char *path, int *fdlock)
+static int acquire_lockfile(const char *path)
 {
     const int allowed_retries = 10;
     const int retry_delay_us = 10000;
@@ -99,10 +99,9 @@ static int acquire_lockfile(const char *path, int *fdlock)
         }
     }
 
-    *fdlock = fd;
     pr_dbg("%s: locked\n", path);
 
-    return 0;
+    return fd;
 }
 
 static int release_lockfile(const char* path, int fdlock)
@@ -115,7 +114,7 @@ static int release_lockfile(const char* path, int fdlock)
 			pr_err("failed closing lockfile: %s [%d]: %s", path, r, strerror(r));
 			return -r;
 		}
-		if (remove(path)) {
+		if (unlink(path)) {
 			r = errno;
 			pr_err("failed removing lockfile: %s [%d]: %s", path, r, strerror(r));
 			return -r;
@@ -583,9 +582,8 @@ int main(int argc, char** argv)
 	struct libnvram_list *list_system = NULL;
 	struct nvram *nvram_user = NULL;
 	struct libnvram_list *list_user = NULL;
-	int fd_lock = 0;
 
-	fd_lock = acquire_lockfile(NVRAM_LOCKFILE, &fd_lock);
+	int fd_lock = acquire_lockfile(NVRAM_LOCKFILE);
 	if (fd_lock < 0)
 		return -r;
 
