@@ -22,7 +22,6 @@
 #define NVRAM_ENV_DEBUG "NVRAM_DEBUG"
 #define NVRAM_ENV_SYSTEM_UNLOCK "NVRAM_SYSTEM_UNLOCK"
 #define NVRAM_SYSTEM_UNLOCK_MAGIC "16440"
-#define NVRAM_SYSTEM_PREFIX "SYS_"
 
 static const char* get_env_str(const char* env, const char* def)
 {
@@ -49,10 +48,14 @@ static int system_unlocked(void)
 	return unlock_str && strcmp(unlock_str, NVRAM_SYSTEM_UNLOCK_MAGIC) == 0;
 }
 
-static int starts_with(const char* str, const char* prefix)
+static int starts_with_sysprefix(const char* str)
 {
-	size_t str_len = strlen(str);
-	size_t prefix_len = strlen(prefix);
+	const char* prefix = xstr(NVRAM_SYSTEM_PREFIX);
+	const size_t prefix_len = strlen(prefix);
+	/* prefix enforcement disabled if string empty */
+	if (prefix_len == 0)
+		return 0;
+	const size_t str_len = strlen(str);
 	if (str_len > prefix_len) {
 		if(!strncmp(str, prefix, prefix_len)) {
 			return 1;
@@ -306,8 +309,8 @@ static int validate_operations(const struct opts* opts)
 		switch (opts->operations[i].op) {
 		case OP_SET:
 			if ((opts->mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE) {
-				if (!starts_with(opts->operations[i].key, NVRAM_SYSTEM_PREFIX)) {
-					pr_err("required prefix \"%s\" missing in system attribute\n", NVRAM_SYSTEM_PREFIX);
+				if (!starts_with_sysprefix(opts->operations[i].key)) {
+					pr_err("required prefix \"%s\" missing in system attribute\n", xstr(NVRAM_SYSTEM_PREFIX));
 					return -EINVAL;
 				}
 				if (!system_unlocked()) {
@@ -316,8 +319,8 @@ static int validate_operations(const struct opts* opts)
 				}
 			}
 			if ((opts->mode & MODE_USER_WRITE) == MODE_USER_WRITE) {
-				if (starts_with(opts->operations[i].key, NVRAM_SYSTEM_PREFIX)) {
-					pr_err("forbidden prefix \"%s\" in user attribute\n", NVRAM_SYSTEM_PREFIX);
+				if (starts_with_sysprefix(opts->operations[i].key)) {
+					pr_err("forbidden prefix \"%s\" in user attribute\n", xstr(NVRAM_SYSTEM_PREFIX));
 					return -EINVAL;
 				}
 			}

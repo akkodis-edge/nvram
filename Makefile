@@ -25,6 +25,11 @@ space := $() $()
 comma := ,
 CLANG_TIDY_CHECKS ?= $(subst $(space),$(comma),$(CLANG_TIDY_CHECKS_LIST))
 
+# Setting NVRAM_SYSTEM_PREFIX to empty value
+# will disable the prefix enforcement.
+NVRAM_SYSTEM_PREFIX ?= SYS_
+CFLAGS += -DNVRAM_SYSTEM_PREFIX=$(NVRAM_SYSTEM_PREFIX)
+
 NVRAM_INTERFACE_DEFAULT ?= file
 NVRAM_INTERFACE_FILE ?= 1
 NVRAM_INTERFACE_MTD ?= 0
