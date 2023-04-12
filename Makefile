@@ -30,18 +30,46 @@ CLANG_TIDY_CHECKS ?= $(subst $(space),$(comma),$(CLANG_TIDY_CHECKS_LIST))
 NVRAM_SYSTEM_PREFIX ?= SYS_
 CFLAGS += -DNVRAM_SYSTEM_PREFIX=$(NVRAM_SYSTEM_PREFIX)
 
-NVRAM_INTERFACE_DEFAULT ?= file
 NVRAM_INTERFACE_FILE ?= 1
 NVRAM_INTERFACE_MTD ?= 0
 NVRAM_INTERFACE_EFI ?= 0
+NVRAM_INTERFACE_DEFAULT ?= file
+# Ensure default interface exists and is enabled
+ifeq ($(NVRAM_INTERFACE_DEFAULT), file)
+ifneq ($(NVRAM_INTERFACE_FILE), 1)
+$(error selected default interface $(NVRAM_INTERFACE_DEFAULT) not enabled)
+endif
+else ifeq ($(NVRAM_INTERFACE_DEFAULT), mtd)
+ifneq ($(NVRAM_INTERFACE_MTD), 1)
+$(error selected default interface $(NVRAM_INTERFACE_DEFAULT) not enabled)
+endif
+else ifeq ($(NVRAM_INTERFACE_DEFAULT), efi)
+ifneq ($(NVRAM_INTERFACE_EFI), 1)
+$(error selected default interface $(NVRAM_INTERFACE_DEFAULT) not enabled)
+endif
+else
+$(error Selected default interface $(NVRAM_INTERFACE_DEFAULT) not supported)
+endif
 CFLAGS += -DNVRAM_INTERFACE_DEFAULT=$(NVRAM_INTERFACE_DEFAULT)
 CFLAGS += -DNVRAM_INTERFACE_EFI=$(NVRAM_INTERFACE_EFI)
 CFLAGS += -DNVRAM_INTERFACE_MTD=$(NVRAM_INTERFACE_MTD)
 CFLAGS += -DNVRAM_INTERFACE_FILE=$(NVRAM_INTERFACE_FILE)
 
-NVRAM_FORMAT_DEFAULT ?= v2
 NVRAM_FORMAT_V2 ?= 1
 NVRAM_FORMAT_LEGACY ?= 0
+NVRAM_FORMAT_DEFAULT ?= v2
+# Ensure default format exists and is enabled
+ifeq ($(NVRAM_FORMAT_DEFAULT), v2)
+ifneq ($(NVRAM_FORMAT_V2), 1)
+$(error selected default interface $(NVRAM_FORMAT_DEFAULT) not enabled)
+endif
+else ifeq ($(NVRAM_FORMAT_DEFAULT), legacy)
+ifneq ($(NVRAM_FORMAT_LEGACY), 1)
+$(error selected default interface $(NVRAM_FORMAT_DEFAULT) not enabled)
+endif
+else
+$(error Selected default format $(NVRAM_FORMAT_DEFAULT) not supported)
+endif
 CFLAGS += -DNVRAM_FORMAT_DEFAULT=$(NVRAM_FORMAT_DEFAULT)
 CFLAGS += -DNVRAM_FORMAT_V2=$(NVRAM_FORMAT_V2)
 CFLAGS += -DNVRAM_FORMAT_LEGACY=$(NVRAM_FORMAT_LEGACY)
