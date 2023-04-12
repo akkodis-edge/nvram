@@ -41,40 +41,60 @@ static const char* nvram_active_str(enum libnvram_active active)
 	}
 }
 
+// return 1 for valid header, 0 for invalid, negative for error
+static int read_header(struct nvram_interface* interface, struct nvram_priv* priv, struct libnvram_header* header)
+{
+	const uint32_t size = libnvram_header_len();
+	uint8_t* buf = malloc(size);
+	if (buf == NULL)
+		return -ENOMEM;
+
+	int r = interface->read(priv, buf, size);
+	if (r == 0)
+		r = libnvram_validate_header(buf, size, header) == 0;
+	free(buf);
+	return r;
+}
+
 static int read_section(struct nvram_interface* interface, struct nvram_priv* priv, uint8_t** data, size_t* len)
 {
-	size_t size = 0;
+	size_t total_size = 0;
+	size_t data_size = 0;
 	uint8_t *buf = NULL;
 
-	int r = interface->size(priv, &size);
+	int r = interface->size(priv, &total_size);
 	if (r) {
 		pr_err("%s: failed checking size [%d]: %s\n", interface->section(priv), -r, strerror(-r));
 		goto error_exit;
 	}
 
-	if (size > UINT32_MAX) { // libnvram limitation
-		r = -EINVAL;
-		pr_err("%s: size %zu larger than limit %u\n", interface->section(priv), size, UINT32_MAX);
-		goto error_exit;
-	}
-
-	if (size > 0) {
-		buf = (uint8_t*) malloc(size);
-		if (!buf) {
-			r = -ENOMEM;
-			pr_err("%s: failed allocating %zu byte read buffer\n", interface->section(priv), size);
-			goto error_exit;
-		}
-
-		r = interface->read(priv, buf, size);
-		if (r) {
-			pr_err("%s: failed reading %zu bytes [%d]: %s\n", interface->section(priv), size, -r, strerror(-r));
+	if (total_size >= libnvram_header_len()) {
+		struct libnvram_header hdr;
+		r = read_header(interface, priv, &hdr);
+		switch (r) {
+		case 1: /* valid */
+			data_size = libnvram_header_len() + hdr.len;
+			buf = malloc(data_size);
+			if (buf == NULL) {
+				r = -ENOMEM;
+				pr_err("%s: failed allocating %zu byte read buffer\n", interface->section(priv), data_size);
+				goto error_exit;
+			}
+			r = interface->read(priv, buf, data_size);
+			if (r != 0) {
+				pr_err("%s: failed reading %zu bytes [%d]: %s\n", interface->section(priv), data_size, -r, strerror(-r));
+				goto error_exit;
+			}
+		case 0: /* invalid */
+			break;
+		default: /* error */
+			pr_err("%s: failed reading and validating header: [%d]: %s\n", interface->section(priv), -r, strerror(-r));
 			goto error_exit;
 		}
 	}
 
 	*data = buf;
-	*len = size;
+	*len = data_size;
 
 	return 0;
 
@@ -127,6 +147,8 @@ static int v2_init(struct nvram** nvram, struct nvram_interface* interface, stru
 	}
 
 	libnvram_init_transaction(&pnvram->trans, buf_a, size_a, buf_b, size_b);
+	pr_dbg("A: %s\n", pnvram->trans.section_a.state == LIBNVRAM_STATE_ALL_VERIFIED ? "valid" : "invalid");
+	pr_dbg("B: %s\n", pnvram->trans.section_b.state == LIBNVRAM_STATE_ALL_VERIFIED ? "valid" : "invalid");
 	pr_dbg("%s: active\n", nvram_active_str(pnvram->trans.active));
 	r = 0;
 	if ((pnvram->trans.active & LIBNVRAM_ACTIVE_A) == LIBNVRAM_ACTIVE_A)
