@@ -163,16 +163,17 @@ static void print_usage()
 	printf("Version:   %s\n", xstr(SRC_VERSION));
 	printf("\n");
 	printf("Defaults:\n");
-	printf("Interface: %s\n", interface_name);
-	printf("Format:    %s\n", xstr(NVRAM_FORMAT_DEFAULT));
-	printf("system_a:  %s\n", nvram_get_interface_section(interface_name, SYSTEM_A));
-	printf("system_b:  %s\n", nvram_get_interface_section(interface_name, SYSTEM_B));
-	printf("user_a:    %s\n", nvram_get_interface_section(interface_name, USER_A));
-	printf("user_b:    %s\n", nvram_get_interface_section(interface_name, USER_B));
+	printf("sys prefix: %s\n", xstr(NVRAM_SYSTEM_PREFIX));
+	printf("interface:  %s\n", interface_name);
+	printf("format:     %s\n", xstr(NVRAM_FORMAT_DEFAULT));
+	printf("system_a:   %s\n", nvram_get_interface_section(interface_name, SYSTEM_A));
+	printf("system_b:   %s\n", nvram_get_interface_section(interface_name, SYSTEM_B));
+	printf("user_a:     %s\n", nvram_get_interface_section(interface_name, USER_A));
+	printf("user_b:     %s\n", nvram_get_interface_section(interface_name, USER_B));
 	printf("\n");
 
-	printf("Usage:   nvram [OPTION] [COMMAND] [KEY] [VALUE]\n");
-	printf("Example: nvram set keyname value\n");
+	printf("Usage:   nvram [OPTION] COMMAND [COMMAND]\n");
+	printf("Example: nvram --set keyname value\n");
 	printf("Defaults to COMMAND list if none set\n");
 	printf("\n");
 
@@ -188,10 +189,10 @@ static void print_usage()
 	printf("\n");
 
 	printf("Commands:\n");
-	printf("  --set       Write attribute. Requires KEY And VALUE\n");
-	printf("  --get       Read attribute. Requires KEY\n");
-	printf("  --del       Delete attributes. Requires KEY\n");
-	printf("  --list      Lists attributes\n");
+	printf("  --set KEY VALUE  Write attribute with KEY and VALUE\n");
+	printf("  --get KEY        Read attribute with KEY\n");
+	printf("  --del KEY        Delete attribute with KEY\n");
+	printf("  --list           Lists attributes\n");
 	printf("\n");
 
 	printf("Return values:\n");
@@ -569,8 +570,8 @@ int main(int argc, char** argv)
 
 	pr_dbg("interface: %s\n", interface_name);
 	pr_dbg("format: %s\n", format_name);
-	pr_dbg("system_mode: %d\n", (opts.mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE ? "yes" : "no");
-	pr_dbg("user_mode: %d\n", (opts.mode & MODE_USER_WRITE) == MODE_USER_WRITE ? "yes" : "no");
+	pr_dbg("system_mode: %s\n", (opts.mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE ? "yes" : "no");
+	pr_dbg("user_mode: %s\n", (opts.mode & MODE_USER_WRITE) == MODE_USER_WRITE ? "yes" : "no");
 
 	int r = 0;
 
