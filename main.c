@@ -569,8 +569,10 @@ int main(int argc, char** argv)
 
 	pr_dbg("interface: %s\n", interface_name);
 	pr_dbg("format: %s\n", format_name);
-	pr_dbg("system_mode: %s\n", (opts.mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE ? "yes" : "no");
-	pr_dbg("user_mode: %s\n", (opts.mode & MODE_USER_WRITE) == MODE_USER_WRITE ? "yes" : "no");
+	pr_dbg("system_write: %s\n", (opts.mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE ? "yes" : "no");
+	pr_dbg("system_read: %s\n", (opts.mode & MODE_SYSTEM_READ) == MODE_SYSTEM_READ ? "yes" : "no");
+	pr_dbg("user_write: %s\n", (opts.mode & MODE_USER_WRITE) == MODE_USER_WRITE ? "yes" : "no");
+	pr_dbg("user_read: %s\n", (opts.mode & MODE_USER_READ) == MODE_USER_READ ? "yes" : "no");
 
 	int r = 0;
 
