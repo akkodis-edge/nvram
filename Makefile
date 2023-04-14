@@ -57,6 +57,7 @@ CFLAGS += -DNVRAM_INTERFACE_FILE=$(NVRAM_INTERFACE_FILE)
 
 NVRAM_FORMAT_V2 ?= 1
 NVRAM_FORMAT_LEGACY ?= 0
+NVRAM_FORMAT_PLATFORM ?= 0
 NVRAM_FORMAT_DEFAULT ?= v2
 # Ensure default format exists and is enabled
 ifeq ($(NVRAM_FORMAT_DEFAULT), v2)
@@ -67,12 +68,17 @@ else ifeq ($(NVRAM_FORMAT_DEFAULT), legacy)
 ifneq ($(NVRAM_FORMAT_LEGACY), 1)
 $(error selected default interface $(NVRAM_FORMAT_DEFAULT) not enabled)
 endif
+else ifeq ($(NVRAM_FORMAT_DEFAULT), platform)
+ifneq ($(NVRAM_FORMAT_PLATFORM), 1)
+$(error selected default interface $(NVRAM_FORMAT_DEFAULT) not enabled)
+endif
 else
 $(error Selected default format $(NVRAM_FORMAT_DEFAULT) not supported)
 endif
 CFLAGS += -DNVRAM_FORMAT_DEFAULT=$(NVRAM_FORMAT_DEFAULT)
 CFLAGS += -DNVRAM_FORMAT_V2=$(NVRAM_FORMAT_V2)
 CFLAGS += -DNVRAM_FORMAT_LEGACY=$(NVRAM_FORMAT_LEGACY)
+CFLAGS += -DNVRAM_FORMAT_PLATFORM=$(NVRAM_FORMAT_PLATFORM)
 OBJS = log.o main.o nvram_format.o nvram_interface.o libnvram/libnvram.a
 
 ifeq ($(NVRAM_INTERFACE_FILE), 1)
@@ -119,6 +125,14 @@ endif
 
 ifeq ($(NVRAM_FORMAT_LEGACY), 1)
 OBJS += nvram_format_legacy.o
+endif
+
+ifeq ($(NVRAM_FORMAT_PLATFORM), 1)
+NVRAM_PLATFORM_WRITE ?= 0
+NVRAM_PLATFORM_VERSION ?= 0
+OBJS += nvram_format_platform.o
+CFLAGS += -DNVRAM_PLATFORM_WRITE=$(NVRAM_PLATFORM_WRITE)
+CFLAGS += -DNVRAM_PLATFORM_VERSION=$(NVRAM_PLATFORM_VERSION)
 endif
 
 all: nvram

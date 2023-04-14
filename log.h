@@ -1,6 +1,8 @@
 #ifndef LOG_H_
 #define LOG_H_
 
+#include <stdio.h>
+
 #define pr_dbg(fmt, ...) \
 		print_debug("dbg: " fmt, ##__VA_ARGS__);
 
