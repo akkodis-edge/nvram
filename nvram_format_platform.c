@@ -27,6 +27,9 @@ static const int ALLOW_WRITE = 0;
  * Re-ordering of fields not allowed due to backwards compatibility.
  *
  * Increment version when adding fields.
+ *
+ * Care should be taken when adding new fields as
+ * previous versions of header will have it written as 0
  */
 struct platform_header {
 	/*
@@ -270,7 +273,7 @@ exit:
 static int platform_commit(struct nvram* nvram, const struct libnvram_list* list)
 {
 	if (ALLOW_WRITE != 1)
-		return -EACCES;
+		return -ENOTSUP;
 
 	struct platform_header header;
 	int r = list_to_header(list, &header);
