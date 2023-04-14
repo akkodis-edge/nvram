@@ -46,10 +46,27 @@ struct platform_header {
 	 */
 	char name[64]; //NOLINT(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
 	/*
+	 * Platform options
+	 */
+	uint32_t options;
+	/*
+	 * Dram configuration blob.
+	 * - blob offset from start of header.
+	 * - size of blob
+	 * - crc32 of blob
+	 */
+	uint32_t ddrc_blob_offset;
+	uint32_t ddrc_blob_size;
+	uint32_t ddrc_blob_crc32;
+	/*
+	 * Dram size in bytes
+	 */
+	uint64_t ddrc_size;
+	/*
 	 * Reserved fields for future versions.
 	 * All shall be set to 0.
 	 */
-	uint32_t rsvd[237]; //NOLINT(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+	uint32_t rsvd[231]; //NOLINT(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
 	/*
 	 * crc32 of header, not including field hdr_crc32.
 	 */
@@ -74,10 +91,63 @@ static void platform_close(struct nvram** nvram)
 	}
 }
 
-// le length must be 4
+/* Used for array indexing */
+enum field_name {
+	FIELD_NAME_NAME = 0,
+	FIELD_NAME_OPTIONS,
+	FIELD_NAME_DDRC_BLOB_OFFSET,
+	FIELD_NAME_DDRC_BLOB_SIZE,
+	FIELD_NAME_DDRC_BLOB_CRC32,
+	FIELD_NAME_DDRC_SIZE,
+	FIELD_NAME_NUM_FIELDS, /* Used for array size */
+};
+
+enum field_type {
+	FIELD_TYPE_U32,
+	FIELD_TYPE_U64,
+	FIELD_TYPE_STRING,
+};
+
+struct field {
+	char* key;
+	enum field_type type;
+};
+
+static const struct field fields[] = {
+	[FIELD_NAME_NAME]				= {.key = "name", .type = FIELD_TYPE_STRING},
+	[FIELD_NAME_OPTIONS]     		= {.key = "options", .type = FIELD_TYPE_U32},
+	[FIELD_NAME_DDRC_BLOB_OFFSET]	= {.key = "ddrc_blob_offset", .type = FIELD_TYPE_U32},
+	[FIELD_NAME_DDRC_BLOB_SIZE]		= {.key = "ddrc_blob_size", .type = FIELD_TYPE_U32},
+	[FIELD_NAME_DDRC_BLOB_CRC32]	= {.key = "ddrc_blob_crc32", .type = FIELD_TYPE_U32},
+	[FIELD_NAME_DDRC_SIZE]			= {.key = "ddrc_size", .type = FIELD_TYPE_U64},
+};
+#define ARRAY_SIZE(a) ((sizeof(a) / sizeof(*(a))))
+static_assert(ARRAY_SIZE(fields) == FIELD_NAME_NUM_FIELDS, "Not all fields defined");
+
+static const enum field_name version_0_fields[] = {
+	FIELD_NAME_NAME,
+	FIELD_NAME_OPTIONS,
+	FIELD_NAME_DDRC_BLOB_OFFSET,
+	FIELD_NAME_DDRC_BLOB_SIZE,
+	FIELD_NAME_DDRC_BLOB_CRC32,
+	FIELD_NAME_DDRC_SIZE,
+};
+
+union data {
+	uint32_t u32;
+	uint64_t u64;
+	char* str;
+};
+
 static uint32_t letou32(const uint8_t* le)
 {
 	return (uint32_t) le[3] << 24 | le[2] << 16 | le[1] << 8 | le[0];
+}
+
+static uint64_t letou64(const uint8_t* le)
+{
+	return (uint64_t) le[7] << 56 | (uint64_t) le[6] << 48 | (uint64_t) le[5] << 40 | (uint64_t) le[4] << 32
+					| (uint64_t) le[3] << 24 | (uint64_t) le[2] << 16 | (uint64_t) le[1] << 8 | (uint64_t) le[0];
 }
 
 #define MEMBER_SIZE(type, member) sizeof(((type *)0)->member)
@@ -105,26 +175,120 @@ static int parse_header(struct platform_header* header, const uint8_t* buf, size
 	if (strnlen(header->name, name_len) == name_len)
 		return -EINVAL;
 
+	header->options = letou32(buf + offsetof(struct platform_header, options));
+	header->ddrc_blob_offset = letou32(buf + offsetof(struct platform_header, ddrc_blob_offset));
+	header->ddrc_blob_size = letou32(buf + offsetof(struct platform_header, ddrc_blob_size));
+	header->ddrc_blob_crc32 = letou32(buf + offsetof(struct platform_header, ddrc_blob_crc32));
+	header->ddrc_size = letou64(buf + offsetof(struct platform_header, ddrc_size));
+
 	const size_t rsvd_len = MEMBER_SIZE(struct platform_header, rsvd);
 	memcpy(header->rsvd, buf + offsetof(struct platform_header, rsvd), rsvd_len);
 
 	return 0;
 }
 
+static int value_to_list(const struct platform_header* header, enum field_name name, const struct field* field, struct libnvram_list** list)
+{
+	/* Well enough to hold both x32 and x64 string representations */
+	const int buf_size = 64;
+	uint8_t buf[buf_size];
+	struct libnvram_entry entry;
+	int r = 0;
+	union data data;
+
+	switch (name) {
+	case FIELD_NAME_NAME:
+		if (field->type != FIELD_TYPE_STRING)
+			return -EBADF;
+		data.str = (char*) header->name;
+		break;
+	case FIELD_NAME_OPTIONS:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		data.u32 = header->options;
+		break;
+	case FIELD_NAME_DDRC_BLOB_OFFSET:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		data.u32 = header->ddrc_blob_offset;
+		break;
+	case FIELD_NAME_DDRC_BLOB_SIZE:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		data.u32 = header->ddrc_blob_size;
+		break;
+	case FIELD_NAME_DDRC_BLOB_CRC32:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		data.u32 = header->ddrc_blob_crc32;
+		break;
+	case FIELD_NAME_DDRC_SIZE:
+		if (field->type != FIELD_TYPE_U64)
+			return -EBADF;
+		data.u64 = header->ddrc_size;
+		break;
+	default:
+		pr_err("Unknown field id [%d] with key \"%s\"\n", name, field->key);
+		return -EINVAL;
+	}
+
+	entry.key = (uint8_t*) field->key;
+	entry.key_len = strlen(field->key) + 1;
+
+	switch (field->type) {
+	case FIELD_TYPE_U32:
+		r = snprintf((char*) buf, buf_size, "0x%" PRIx32"", data.u32);
+		if (r >= buf_size) {
+			pr_err("failed converting u32 to string\n");
+			return -EINVAL;
+		}
+		entry.value = buf;
+		entry.value_len = r + 1;
+		break;
+	case FIELD_TYPE_U64:
+		r = snprintf((char*) buf, buf_size, "0x%" PRIx64"", data.u64);
+		if (r >= buf_size) {
+			pr_err("failed converting u64 to string\n");
+			return -EINVAL;
+		}
+		entry.value = buf;
+		entry.value_len = r + 1;
+		break;
+	case FIELD_TYPE_STRING:
+		entry.value = (uint8_t*) data.str;
+		entry.value_len = strlen(data.str) + 1;
+		break;
+	}
+
+	if (libnvram_list_set(list, &entry) != 0) {
+		pr_err("Failed adding entry to list\n");
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static int header_to_list_version_iterator(const struct platform_header* header, const enum field_name* version_fields, size_t len, struct libnvram_list** list)
+{
+	for (size_t i = 0; i < len; ++i) {
+		const enum field_name field_index = version_fields[i];
+		const struct field* field = &fields[field_index];
+		int r = value_to_list(header, field_index, field, list);
+		if (r != 0)
+			return r;
+	}
+	return 0;
+}
+
 static int header_to_list(struct libnvram_list** list, const struct platform_header* header)
 {
-	struct libnvram_entry entry;
 	int r = 0;
 
 	switch (header->version) {
 	case 0:
-		entry.key = (uint8_t*) "name";
-		entry.key_len = strlen((char*) entry.key) + 1;
-		entry.value = (uint8_t*) header->name;
-		entry.value_len = strlen((char*) entry.value) + 1;
-		r = libnvram_list_set(list, &entry);
+		r = header_to_list_version_iterator(header, version_0_fields, ARRAY_SIZE(version_0_fields), list);
 		if (r != 0)
-			return -ENOMEM;
+			return r;
 		break;
 	default:
 		pr_err("Unknown header version: %" PRIu32 "\n", header->version);
@@ -134,24 +298,111 @@ static int header_to_list(struct libnvram_list** list, const struct platform_hea
 	return 0;
 }
 
+static int value_to_header(struct platform_header* header, enum field_name name, const struct field* field, const struct libnvram_entry* entry)
+{
+	/* Ensure value to parse is null terminated */
+	if (entry->value[entry->value_len - 1] != '\0') {
+		pr_err("field id [%d] with key \"%s\" not of type string\n", name, field->key);
+		return -EINVAL;
+	}
+	union data data;
+	switch (field->type) {
+	case FIELD_TYPE_U32:
+		if ((sscanf((char*) entry->value, "0x%" SCNx32 "", &data.u32) != 1)
+			&& (sscanf((char*) entry->value, "0X%" SCNx32 "", &data.u32) != 1)
+			&& (sscanf((char*) entry->value, "%" SCNu32 "", &data.u32) != 1)) {
+			pr_err("field id [%d] with key \"%s\" not of type u32\n", name, field->key);
+			return -EINVAL;
+		}
+		break;
+	case FIELD_TYPE_U64:
+		if ((sscanf((char*) entry->value, "0x%" SCNx64 "", &data.u64) != 1)
+			&& (sscanf((char*) entry->value, "0X%" SCNx64 "", &data.u64) != 1)
+			&& (sscanf((char*) entry->value, "%" SCNu64 "", &data.u64) != 1)) {
+			pr_err("field id [%d] with key \"%s\" not of type u64\n", name, field->key);
+			return -EINVAL;
+		}
+		break;
+	case FIELD_TYPE_STRING:
+		data.str = (char*) entry->value;
+		break;
+	}
+
+	switch (name) {
+	case FIELD_NAME_NAME:
+		if (field->type != FIELD_TYPE_STRING)
+			return -EBADF;
+		if (entry->value_len > MEMBER_SIZE(struct platform_header, name)) {
+			pr_err("field id [%d] with key \"%s\" too long value\n", name, field->key);
+			return -EINVAL;
+		}
+		memcpy(header->name, (char*) entry->value, entry->value_len);
+		break;
+	case FIELD_NAME_OPTIONS:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		header->options = data.u32;
+		break;
+	case FIELD_NAME_DDRC_BLOB_OFFSET:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		header->ddrc_blob_offset = data.u32;
+		break;
+	case FIELD_NAME_DDRC_BLOB_SIZE:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		header->ddrc_blob_size = data.u32;
+		break;
+	case FIELD_NAME_DDRC_BLOB_CRC32:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		header->ddrc_blob_crc32 = data.u32;
+		break;
+	case FIELD_NAME_DDRC_SIZE:
+		if (field->type != FIELD_TYPE_U64)
+			return -EBADF;
+		header->ddrc_size = data.u64;
+		break;
+	default:
+		pr_err("Unknown field id [%d] with key \"%s\"\n", name, field->key);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+/* return 1 if found, 0 if not found, < 0 for error */
+static int list_to_header_version_iterator(struct platform_header* header, const enum field_name* version_fields, size_t len, const struct libnvram_entry* entry)
+{
+	for (size_t i = 0; i < len; ++i) {
+		const enum field_name field_index = version_fields[i];
+		const struct field* field = &fields[field_index];
+		if (strncmp(field->key, (char*) entry->key, entry->key_len) == 0) {
+			int r = value_to_header(header, field_index, field, entry);
+			if (r != 0)
+				return r;
+			return 1;
+		}
+	}
+	return 0;
+}
+
 static int list_to_header(const struct libnvram_list* list, struct platform_header* header)
 {
 	header->magic = HEADER_MAGIC;
 	header->version = HEADER_VERSION;
 
+	int r = 0;
+
 	for (struct libnvram_list* it = libnvram_list_begin(list); it != libnvram_list_end(list); it = libnvram_list_next(it)) {
 		const struct libnvram_entry* entry = libnvram_list_deref(it);
 		switch (header->version) {
 		case 0:
-			if (strcmp((char*) entry->key, "name") == 0) {
-				if (entry->value_len > MEMBER_SIZE(struct platform_header, name)) {
-					pr_err("key \"name\" too long value: max %zu\n", MEMBER_SIZE(struct platform_header, name));
-					return -EINVAL;
-				}
-				memcpy(header->name, entry->value, entry->value_len);
-			}
-			else {
-				pr_err("Unknown field: %s\n", (char*) entry->key);
+			r = list_to_header_version_iterator(header, version_0_fields, ARRAY_SIZE(version_0_fields), entry);
+			if (r < 0)
+				return r;
+			if (r == 0) {
+				pr_err("field with key \"%s\" unresolved\n", (char*) entry->key);
 				return -EINVAL;
 			}
 			break;
@@ -172,6 +423,18 @@ static void u32tole(uint32_t host, uint8_t* le)
 	le[3] = (host >> 24) & 0xff;
 }
 
+static void u64tole(uint64_t host, uint8_t* le)
+{
+	le[0] = host & 0xff;
+	le[1] = (host >> 8) & 0xff;
+	le[2] = (host >> 16) & 0xff;
+	le[3] = (host >> 24) & 0xff;
+	le[4] = (host >> 32) & 0xff;
+	le[5] = (host >> 40) & 0xff;
+	le[6] = (host >> 48) & 0xff;
+	le[7] = (host >> 56) & 0xff;
+}
+
 static int serialize_header(const struct platform_header* header, uint8_t* buf, size_t size)
 {
 	if (size != PLATFORM_HEADER_SIZE)
@@ -182,15 +445,25 @@ static int serialize_header(const struct platform_header* header, uint8_t* buf, 
 	u32tole(header->magic, buf + offsetof(struct platform_header, magic));
 	u32tole(header->version, buf + offsetof(struct platform_header, version));
 	memcpy(buf + offsetof(struct platform_header, name), header->name, MEMBER_SIZE(struct platform_header, name));
+	u32tole(header->options, buf + offsetof(struct platform_header, options));
+	u32tole(header->ddrc_blob_offset, buf + offsetof(struct platform_header, ddrc_blob_offset));
+	u32tole(header->ddrc_blob_size, buf + offsetof(struct platform_header, ddrc_blob_size));
+	u32tole(header->ddrc_blob_crc32, buf + offsetof(struct platform_header, ddrc_blob_crc32));
+	u64tole(header->ddrc_size, buf + offsetof(struct platform_header, ddrc_size));
 
 	const uint32_t crc32 = libnvram_crc32(buf, offsetof(struct platform_header, hdr_crc32));
 	u32tole(crc32, buf + offsetof(struct platform_header, hdr_crc32));
 
 	pr_dbg("header content:\n");
-	pr_dbg("  magic:      0x%" PRIx32 "\n", header->magic);
-	pr_dbg("  version:    %u\n", header->version);
-	pr_dbg("  name:       %s\n", header->name);
-	pr_dbg("  hdr_crc32:  0x%" PRIx32 "\n", crc32);
+	pr_dbg("  magic:             0x%" PRIx32 "\n", header->magic);
+	pr_dbg("  version:           %u\n", header->version);
+	pr_dbg("  name:              %s\n", header->name);
+	pr_dbg("  options:           0x%" PRIx32 "\n", header->options);
+	pr_dbg("  ddrc_blob_offset:  0x%" PRIx32 "\n", header->ddrc_blob_offset);
+	pr_dbg("  ddrc_blob_size:    0x%" PRIx32 "\n", header->ddrc_blob_size);
+	pr_dbg("  ddrc_blob_crc32:   0x%" PRIx32 "\n", header->ddrc_blob_crc32);
+	pr_dbg("  ddrc_size:         0x%" PRIx64 "\n", header->ddrc_size);
+	pr_dbg("  hdr_crc32:         0x%" PRIx32 "\n", crc32);
 
 	return 0;
 }
@@ -276,6 +549,7 @@ static int platform_commit(struct nvram* nvram, const struct libnvram_list* list
 		return -ENOTSUP;
 
 	struct platform_header header;
+	memset(&header, 0, sizeof(header));
 	int r = list_to_header(list, &header);
 	if (r != 0)
 		return r;
