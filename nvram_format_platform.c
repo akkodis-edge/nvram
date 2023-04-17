@@ -62,10 +62,17 @@ struct platform_header {
 	 */
 	uint64_t ddrc_size;
 	/*
+	 * Configuration fields for defining hardware capabilities.
+	 */
+	uint32_t config1;
+	uint32_t config2;
+	uint32_t config3;
+	uint32_t config4;
+	/*
 	 * Reserved fields for future versions.
 	 * All shall be set to 0.
 	 */
-	uint32_t rsvd[231]; //NOLINT(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+	uint32_t rsvd[227]; //NOLINT(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
 	/*
 	 * crc32 of header, not including field hdr_crc32.
 	 */
@@ -98,6 +105,10 @@ enum field_name {
 	FIELD_NAME_DDRC_BLOB_TYPE,
 	FIELD_NAME_DDRC_BLOB_CRC32,
 	FIELD_NAME_DDRC_SIZE,
+	FIELD_NAME_CONFIG1,
+	FIELD_NAME_CONFIG2,
+	FIELD_NAME_CONFIG3,
+	FIELD_NAME_CONFIG4,
 	FIELD_NAME_NUM_FIELDS, /* Used for array size */
 };
 
@@ -119,6 +130,10 @@ static const struct field fields[] = {
 	[FIELD_NAME_DDRC_BLOB_TYPE]		= {.key = "ddrc_blob_type", .type = FIELD_TYPE_U32},
 	[FIELD_NAME_DDRC_BLOB_CRC32]	= {.key = "ddrc_blob_crc32", .type = FIELD_TYPE_U32},
 	[FIELD_NAME_DDRC_SIZE]			= {.key = "ddrc_size", .type = FIELD_TYPE_U64},
+	[FIELD_NAME_CONFIG1]			= {.key = "config1", .type = FIELD_TYPE_U32},
+	[FIELD_NAME_CONFIG2]			= {.key = "config2", .type = FIELD_TYPE_U32},
+	[FIELD_NAME_CONFIG3]			= {.key = "config3", .type = FIELD_TYPE_U32},
+	[FIELD_NAME_CONFIG4]			= {.key = "config4", .type = FIELD_TYPE_U32},
 };
 #define ARRAY_SIZE(a) ((sizeof(a) / sizeof(*(a))))
 static_assert(ARRAY_SIZE(fields) == FIELD_NAME_NUM_FIELDS, "Not all fields defined");
@@ -130,6 +145,10 @@ static const enum field_name version_0_fields[] = {
 	FIELD_NAME_DDRC_BLOB_TYPE,
 	FIELD_NAME_DDRC_BLOB_CRC32,
 	FIELD_NAME_DDRC_SIZE,
+	FIELD_NAME_CONFIG1,
+	FIELD_NAME_CONFIG2,
+	FIELD_NAME_CONFIG3,
+	FIELD_NAME_CONFIG4,
 };
 
 union data {
@@ -178,6 +197,10 @@ static int parse_header(struct platform_header* header, const uint8_t* buf, size
 	header->ddrc_blob_type = letou32(buf + offsetof(struct platform_header, ddrc_blob_type));
 	header->ddrc_blob_crc32 = letou32(buf + offsetof(struct platform_header, ddrc_blob_crc32));
 	header->ddrc_size = letou64(buf + offsetof(struct platform_header, ddrc_size));
+	header->config1 = letou32(buf + offsetof(struct platform_header, config1));
+	header->config2 = letou32(buf + offsetof(struct platform_header, config2));
+	header->config3 = letou32(buf + offsetof(struct platform_header, config3));
+	header->config4 = letou32(buf + offsetof(struct platform_header, config4));
 
 	/* reserved */
 	const size_t rsvd_len = MEMBER_SIZE(struct platform_header, rsvd);
@@ -225,6 +248,26 @@ static int value_to_list(const struct platform_header* header, enum field_name n
 		if (field->type != FIELD_TYPE_U64)
 			return -EBADF;
 		data.u64 = header->ddrc_size;
+		break;
+	case FIELD_NAME_CONFIG1:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		data.u32 = header->config1;
+		break;
+	case FIELD_NAME_CONFIG2:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		data.u32 = header->config2;
+		break;
+	case FIELD_NAME_CONFIG3:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		data.u32 = header->config3;
+		break;
+	case FIELD_NAME_CONFIG4:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		data.u32 = header->config4;
 		break;
 	default:
 		pr_err("Unknown field id [%d] with key \"%s\"\n", name, field->key);
@@ -375,6 +418,26 @@ static int value_to_header(struct platform_header* header, enum field_name name,
 			return -EBADF;
 		header->ddrc_size = data.u64;
 		break;
+	case FIELD_NAME_CONFIG1:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		header->config1 = data.u32;
+		break;
+	case FIELD_NAME_CONFIG2:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		header->config2 = data.u32;
+		break;
+	case FIELD_NAME_CONFIG3:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		header->config3 = data.u32;
+		break;
+	case FIELD_NAME_CONFIG4:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		header->config4 = data.u32;
+		break;
 	default:
 		pr_err("Unknown field id [%d] with key \"%s\"\n", name, field->key);
 		return -EINVAL;
@@ -463,6 +526,10 @@ static int serialize_header(const struct platform_header* header, uint8_t* buf, 
 	u32tole(header->ddrc_blob_type, buf + offsetof(struct platform_header, ddrc_blob_type));
 	u32tole(header->ddrc_blob_crc32, buf + offsetof(struct platform_header, ddrc_blob_crc32));
 	u64tole(header->ddrc_size, buf + offsetof(struct platform_header, ddrc_size));
+	u32tole(header->config1, buf + offsetof(struct platform_header, config1));
+	u32tole(header->config2, buf + offsetof(struct platform_header, config2));
+	u32tole(header->config3, buf + offsetof(struct platform_header, config3));
+	u32tole(header->config4, buf + offsetof(struct platform_header, config4));
 
 	const uint32_t crc32 = libnvram_crc32(buf, offsetof(struct platform_header, hdr_crc32));
 	u32tole(crc32, buf + offsetof(struct platform_header, hdr_crc32));
@@ -476,6 +543,10 @@ static int serialize_header(const struct platform_header* header, uint8_t* buf, 
 	pr_dbg("  ddrc_blob_type:    0x%" PRIx32 "\n", header->ddrc_blob_type);
 	pr_dbg("  ddrc_blob_crc32:   0x%" PRIx32 "\n", header->ddrc_blob_crc32);
 	pr_dbg("  ddrc_size:         0x%" PRIx64 "\n", header->ddrc_size);
+	pr_dbg("  config1:           0x%" PRIx32 "\n", header->config1);
+	pr_dbg("  config2:           0x%" PRIx32 "\n", header->config2);
+	pr_dbg("  config3:           0x%" PRIx32 "\n", header->config3);
+	pr_dbg("  config4:           0x%" PRIx32 "\n", header->config4);
 	pr_dbg("  hdr_crc32:         0x%" PRIx32 "\n", crc32);
 
 	return 0;
