@@ -36,27 +36,25 @@ struct platform_header {
 	 * Shall contain value HEADER_MAGIC.
 	 */
 #define HEADER_MAGIC 0x54414c50
-	uint32_t magic;
+	uint32_t hdr_magic;
 	/*
 	 * Header version -- starting from 0.
 	 */
-	uint32_t version;
+	uint32_t hdr_version;
 	/*
 	 * Name of platform, null terminated
 	 */
 	char name[64]; //NOLINT(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
 	/*
-	 * Platform options
-	 */
-	uint32_t options;
-	/*
 	 * Dram configuration blob.
 	 * - blob offset from start of header.
 	 * - size of blob
+	 * - type of blob
 	 * - crc32 of blob
 	 */
 	uint32_t ddrc_blob_offset;
 	uint32_t ddrc_blob_size;
+	uint32_t ddrc_blob_type;
 	uint32_t ddrc_blob_crc32;
 	/*
 	 * Dram size in bytes
@@ -94,9 +92,9 @@ static void platform_close(struct nvram** nvram)
 /* Used for array indexing */
 enum field_name {
 	FIELD_NAME_NAME = 0,
-	FIELD_NAME_OPTIONS,
 	FIELD_NAME_DDRC_BLOB_OFFSET,
 	FIELD_NAME_DDRC_BLOB_SIZE,
+	FIELD_NAME_DDRC_BLOB_TYPE,
 	FIELD_NAME_DDRC_BLOB_CRC32,
 	FIELD_NAME_DDRC_SIZE,
 	FIELD_NAME_NUM_FIELDS, /* Used for array size */
@@ -115,9 +113,9 @@ struct field {
 
 static const struct field fields[] = {
 	[FIELD_NAME_NAME]				= {.key = "name", .type = FIELD_TYPE_STRING},
-	[FIELD_NAME_OPTIONS]     		= {.key = "options", .type = FIELD_TYPE_U32},
 	[FIELD_NAME_DDRC_BLOB_OFFSET]	= {.key = "ddrc_blob_offset", .type = FIELD_TYPE_U32},
 	[FIELD_NAME_DDRC_BLOB_SIZE]		= {.key = "ddrc_blob_size", .type = FIELD_TYPE_U32},
+	[FIELD_NAME_DDRC_BLOB_TYPE]		= {.key = "ddrc_blob_type", .type = FIELD_TYPE_U32},
 	[FIELD_NAME_DDRC_BLOB_CRC32]	= {.key = "ddrc_blob_crc32", .type = FIELD_TYPE_U32},
 	[FIELD_NAME_DDRC_SIZE]			= {.key = "ddrc_size", .type = FIELD_TYPE_U64},
 };
@@ -126,9 +124,9 @@ static_assert(ARRAY_SIZE(fields) == FIELD_NAME_NUM_FIELDS, "Not all fields defin
 
 static const enum field_name version_0_fields[] = {
 	FIELD_NAME_NAME,
-	FIELD_NAME_OPTIONS,
 	FIELD_NAME_DDRC_BLOB_OFFSET,
 	FIELD_NAME_DDRC_BLOB_SIZE,
+	FIELD_NAME_DDRC_BLOB_TYPE,
 	FIELD_NAME_DDRC_BLOB_CRC32,
 	FIELD_NAME_DDRC_SIZE,
 };
@@ -158,29 +156,29 @@ static int parse_header(struct platform_header* header, const uint8_t* buf, size
 	if (size != PLATFORM_HEADER_SIZE)
 		return -EINVAL;
 
+	/* header */
 	header->hdr_crc32 = letou32(buf + offsetof(struct platform_header, hdr_crc32));
 	const uint32_t crc32 = libnvram_crc32(buf, offsetof(struct platform_header, hdr_crc32));
 	if (header->hdr_crc32 != crc32)
 		return -EINVAL;
-
-	header->magic = letou32(buf + offsetof(struct platform_header, magic));
-	if (header->magic != HEADER_MAGIC)
+	header->hdr_magic = letou32(buf + offsetof(struct platform_header, hdr_magic));
+	if (header->hdr_magic != HEADER_MAGIC)
 		return -EINVAL;
+	header->hdr_version = letou32(buf + offsetof(struct platform_header, hdr_version));
 
-	header->version = letou32(buf + offsetof(struct platform_header, version));
-
+	/* data */
 	const size_t name_len = MEMBER_SIZE(struct platform_header, name);
 	memcpy(header->name, buf + offsetof(struct platform_header, name), name_len);
 	/* Verify null-terminator present */
 	if (strnlen(header->name, name_len) == name_len)
 		return -EINVAL;
-
-	header->options = letou32(buf + offsetof(struct platform_header, options));
 	header->ddrc_blob_offset = letou32(buf + offsetof(struct platform_header, ddrc_blob_offset));
 	header->ddrc_blob_size = letou32(buf + offsetof(struct platform_header, ddrc_blob_size));
+	header->ddrc_blob_type = letou32(buf + offsetof(struct platform_header, ddrc_blob_type));
 	header->ddrc_blob_crc32 = letou32(buf + offsetof(struct platform_header, ddrc_blob_crc32));
 	header->ddrc_size = letou64(buf + offsetof(struct platform_header, ddrc_size));
 
+	/* reserved */
 	const size_t rsvd_len = MEMBER_SIZE(struct platform_header, rsvd);
 	memcpy(header->rsvd, buf + offsetof(struct platform_header, rsvd), rsvd_len);
 
@@ -202,11 +200,6 @@ static int value_to_list(const struct platform_header* header, enum field_name n
 			return -EBADF;
 		data.str = (char*) header->name;
 		break;
-	case FIELD_NAME_OPTIONS:
-		if (field->type != FIELD_TYPE_U32)
-			return -EBADF;
-		data.u32 = header->options;
-		break;
 	case FIELD_NAME_DDRC_BLOB_OFFSET:
 		if (field->type != FIELD_TYPE_U32)
 			return -EBADF;
@@ -216,6 +209,11 @@ static int value_to_list(const struct platform_header* header, enum field_name n
 		if (field->type != FIELD_TYPE_U32)
 			return -EBADF;
 		data.u32 = header->ddrc_blob_size;
+		break;
+	case FIELD_NAME_DDRC_BLOB_TYPE:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		data.u32 = header->ddrc_blob_type;
 		break;
 	case FIELD_NAME_DDRC_BLOB_CRC32:
 		if (field->type != FIELD_TYPE_U32)
@@ -284,14 +282,14 @@ static int header_to_list(struct libnvram_list** list, const struct platform_hea
 {
 	int r = 0;
 
-	switch (header->version) {
+	switch (header->hdr_version) {
 	case 0:
 		r = header_to_list_version_iterator(header, version_0_fields, ARRAY_SIZE(version_0_fields), list);
 		if (r != 0)
 			return r;
 		break;
 	default:
-		pr_err("Unknown header version: %" PRIu32 "\n", header->version);
+		pr_err("Unknown header version: %" PRIu32 "\n", header->hdr_version);
 		return -EINVAL;
 	}
 
@@ -338,11 +336,6 @@ static int value_to_header(struct platform_header* header, enum field_name name,
 		}
 		memcpy(header->name, (char*) entry->value, entry->value_len);
 		break;
-	case FIELD_NAME_OPTIONS:
-		if (field->type != FIELD_TYPE_U32)
-			return -EBADF;
-		header->options = data.u32;
-		break;
 	case FIELD_NAME_DDRC_BLOB_OFFSET:
 		if (field->type != FIELD_TYPE_U32)
 			return -EBADF;
@@ -352,6 +345,11 @@ static int value_to_header(struct platform_header* header, enum field_name name,
 		if (field->type != FIELD_TYPE_U32)
 			return -EBADF;
 		header->ddrc_blob_size = data.u32;
+		break;
+	case FIELD_NAME_DDRC_BLOB_TYPE:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		header->ddrc_blob_type = data.u32;
 		break;
 	case FIELD_NAME_DDRC_BLOB_CRC32:
 		if (field->type != FIELD_TYPE_U32)
@@ -389,14 +387,14 @@ static int list_to_header_version_iterator(struct platform_header* header, const
 
 static int list_to_header(const struct libnvram_list* list, struct platform_header* header)
 {
-	header->magic = HEADER_MAGIC;
-	header->version = HEADER_VERSION;
+	header->hdr_magic = HEADER_MAGIC;
+	header->hdr_version = HEADER_VERSION;
 
 	int r = 0;
 
 	for (struct libnvram_list* it = libnvram_list_begin(list); it != libnvram_list_end(list); it = libnvram_list_next(it)) {
 		const struct libnvram_entry* entry = libnvram_list_deref(it);
-		switch (header->version) {
+		switch (header->hdr_version) {
 		case 0:
 			r = list_to_header_version_iterator(header, version_0_fields, ARRAY_SIZE(version_0_fields), entry);
 			if (r < 0)
@@ -407,7 +405,7 @@ static int list_to_header(const struct libnvram_list* list, struct platform_head
 			}
 			break;
 		default:
-			pr_err("Unknown header version: %" PRIu32 "\n", header->version);
+			pr_err("Unknown header version: %" PRIu32 "\n", header->hdr_version);
 			return -EINVAL;
 		}
 	}
@@ -442,12 +440,13 @@ static int serialize_header(const struct platform_header* header, uint8_t* buf, 
 
 	memset(buf, 0, size);
 
-	u32tole(header->magic, buf + offsetof(struct platform_header, magic));
-	u32tole(header->version, buf + offsetof(struct platform_header, version));
+	u32tole(header->hdr_magic, buf + offsetof(struct platform_header, hdr_magic));
+	u32tole(header->hdr_version, buf + offsetof(struct platform_header, hdr_version));
+
 	memcpy(buf + offsetof(struct platform_header, name), header->name, MEMBER_SIZE(struct platform_header, name));
-	u32tole(header->options, buf + offsetof(struct platform_header, options));
 	u32tole(header->ddrc_blob_offset, buf + offsetof(struct platform_header, ddrc_blob_offset));
 	u32tole(header->ddrc_blob_size, buf + offsetof(struct platform_header, ddrc_blob_size));
+	u32tole(header->ddrc_blob_type, buf + offsetof(struct platform_header, ddrc_blob_type));
 	u32tole(header->ddrc_blob_crc32, buf + offsetof(struct platform_header, ddrc_blob_crc32));
 	u64tole(header->ddrc_size, buf + offsetof(struct platform_header, ddrc_size));
 
@@ -455,12 +454,12 @@ static int serialize_header(const struct platform_header* header, uint8_t* buf, 
 	u32tole(crc32, buf + offsetof(struct platform_header, hdr_crc32));
 
 	pr_dbg("header content:\n");
-	pr_dbg("  magic:             0x%" PRIx32 "\n", header->magic);
-	pr_dbg("  version:           %u\n", header->version);
+	pr_dbg("  hdr_magic:             0x%" PRIx32 "\n", header->hdr_magic);
+	pr_dbg("  hdr_version:           %u\n", header->hdr_version);
 	pr_dbg("  name:              %s\n", header->name);
-	pr_dbg("  options:           0x%" PRIx32 "\n", header->options);
 	pr_dbg("  ddrc_blob_offset:  0x%" PRIx32 "\n", header->ddrc_blob_offset);
 	pr_dbg("  ddrc_blob_size:    0x%" PRIx32 "\n", header->ddrc_blob_size);
+	pr_dbg("  ddrc_blob_type:    0x%" PRIx32 "\n", header->ddrc_blob_type);
 	pr_dbg("  ddrc_blob_crc32:   0x%" PRIx32 "\n", header->ddrc_blob_crc32);
 	pr_dbg("  ddrc_size:         0x%" PRIx64 "\n", header->ddrc_size);
 	pr_dbg("  hdr_crc32:         0x%" PRIx32 "\n", crc32);
@@ -511,9 +510,9 @@ static int platform_init(struct nvram** nvram, struct nvram_interface* interface
 			goto exit;
 		}
 		if (parse_header(&header, buf, PLATFORM_HEADER_SIZE) == 0) {
-			if (header.version > HEADER_VERSION) {
+			if (header.hdr_version > HEADER_VERSION) {
 				pr_err("%s: found header version [%u] greater than supported version [%u]\n",
-						section_a, header.version, HEADER_VERSION)
+						section_a, header.hdr_version, HEADER_VERSION)
 				r = -EINVAL;
 				goto exit;
 			}
