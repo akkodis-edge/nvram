@@ -368,7 +368,6 @@ static int value_to_header(struct platform_header* header, enum field_name name,
 	{
 		char* endptr = NULL;
 		const unsigned long long int val = strtoull((char*) entry->value, &endptr, 0);
-		pr_err("ret: 0x%llx: errno: %d: ptr: %p\n", val, errno, endptr);
 		if ((val == 0 && endptr == NULL)
 			|| (val == ULLONG_MAX && errno == ERANGE)
 			|| (val > UINT64_MAX)) {
