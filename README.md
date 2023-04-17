@@ -42,6 +42,12 @@ Binary format serialized by libnvram v2. See libnvram/libnvram.h for details.
 
 Supports A/B sections with power fail safe updates.
 
+** platform **
+
+Platform header used for describing hardware configuration such as memory  size and timings.
+
+Only single section (A) supported. This is intended as a read-only block.
+
 # Build
 Compiled in formats and interfaces are controlled by flags to make.
 
@@ -89,12 +95,18 @@ NVRAM_FORMAT_V2=1
 
 NVRAM_FORMAT_LEGACY=0
 
+NVRAM_FORMAT_PLATFORM=0
+
+NVRAM_PLATFORM_VERSION=0 (Which version to support)
+
+NVRAM_PLATFORM_WRITE=0 (Whether to allow writing)
+
 ## Testing
 Build:
 
 ``` 
 make clean
-make NVRAM_USE_SANITIZER=1 NVRAM_FORMAT_LEGACY=1 NVRAM_CLANG_TIDY=1
+make NVRAM_USE_SANITIZER=1 NVRAM_FORMAT_LEGACY=1 NVRAM_FORMAT_PLATFORM=1 NVRAM_PLATFORM_WRITE=1 NVRAM_CLANG_TIDY=1
 ```
 
 Run tests:
