@@ -275,12 +275,124 @@ enum op {
 	OP_DEL = 1 << 3,
 };
 
+enum mode {
+	MODE_NONE = 0,
+	MODE_USER_READ = 1 << 0,
+	MODE_USER_WRITE = 1 << 1,
+	MODE_SYSTEM_READ = 1 << 2,
+	MODE_SYSTEM_WRITE = 1 << 3,
+};
+
 struct operation {
+	/* commandline arguments */
 	enum op op;
 	char* key;
 	char* value;
+	/* filled in when created */
+	int (*validate)(const struct operation* operation, enum mode mode);
+	int (*execute)(const struct operation* operation, enum mode mode,
+			struct libnvram_list** list_system, struct libnvram_list** list_user, int* write_performed);
 	struct operation* next;
 };
+
+struct opts {
+	enum mode mode;
+	struct operation* operations;
+};
+
+static int validate_set(const struct operation* operation, enum mode mode)
+{
+	if ((mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE) {
+		if (!starts_with_sysprefix(operation->key)) {
+			pr_err("required prefix \"%s\" missing in system attribute\n", xstr(NVRAM_SYSTEM_PREFIX));
+			return -EINVAL;
+		}
+		if (!system_unlocked()) {
+			pr_err("system write locked\n")
+			return -EACCES;
+		}
+	}
+	if ((mode & MODE_USER_WRITE) == MODE_USER_WRITE) {
+		if (starts_with_sysprefix(operation->key)) {
+			pr_err("forbidden prefix \"%s\" in user attribute\n", xstr(NVRAM_SYSTEM_PREFIX));
+			return -EINVAL;
+		}
+	}
+	return 0;
+}
+
+static int validate_del(const struct operation* operation, enum mode mode)
+{
+	(void) operation;
+
+	if (((mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE) && !system_unlocked()) {
+		pr_err("system write locked\n")
+		return -EACCES;
+	}
+	return 0;
+}
+
+static int exec_list(const struct operation* operation, enum mode mode,
+		struct libnvram_list** list_system, struct libnvram_list** list_user, int* write_performed)
+{
+	(void) write_performed;
+	(void) operation;
+
+	if ((mode & MODE_SYSTEM_READ) == MODE_SYSTEM_READ)
+		print_list("system", *list_system);
+	if ((mode & MODE_USER_READ) == MODE_USER_READ)
+		print_list("user", *list_user);
+	return 0;
+}
+
+static int exec_set(const struct operation* operation, enum mode mode,
+		struct libnvram_list** list_system, struct libnvram_list** list_user, int* write_performed)
+{
+	int r = -EINVAL;
+	if ((mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE)
+		r = add_list_entry("system", list_system, operation->key, operation->value);
+	else if ((mode & MODE_USER_WRITE) == MODE_USER_WRITE)
+		r = add_list_entry("user", list_user, operation->key, operation->value);
+	if (r < 0)
+		return r;
+	if (r == 1) {
+		pr_dbg("written\n");
+		*write_performed = 1;
+	}
+	return 0;
+}
+
+static int exec_get(const struct operation* operation, enum mode mode,
+		struct libnvram_list** list_system, struct libnvram_list** list_user, int* write_performed)
+{
+	(void) write_performed;
+
+	int r = -ENOENT;
+	/* Prefer retrieving from system if allowed */
+	if ((mode & MODE_SYSTEM_READ) == MODE_SYSTEM_READ)
+		r = print_list_entry("system", *list_system, operation->key);
+	/* Retrieve from user if not already found and allowed */
+	if (r != 0 && (mode & MODE_USER_READ) == MODE_USER_READ)
+		r = print_list_entry("user", *list_user, operation->key);
+	if (r != 0)
+		pr_dbg("key not found: %s\n", operation->key);
+	return r;
+}
+
+static int exec_del(const struct operation* operation, enum mode mode,
+		struct libnvram_list** list_system, struct libnvram_list** list_user, int* write_performed)
+{
+	int r = -EINVAL;
+	if ((mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE)
+		r = remove_list_entry("system", list_system, operation->key);
+	else if ((mode & MODE_USER_WRITE) == MODE_USER_WRITE)
+		r = remove_list_entry("user", list_user, operation->key);
+	if (r == 1) {
+		pr_dbg("deleted\n");
+		*write_performed = 1;
+	}
+	return 0;
+}
 
 static int add_operation(struct operation** list, enum op op, char* key, char* value)
 {
@@ -292,6 +404,26 @@ static int add_operation(struct operation** list, enum op op, char* key, char* v
 	operation->op = op;
 	operation->key = key;
 	operation->value = value;
+	switch (operation->op) {
+	case OP_LIST:
+		operation->validate = NULL;
+		operation->execute = exec_list;
+		break;
+	case OP_SET:
+		operation->validate = validate_set;
+		operation->execute = exec_set;
+		break;
+	case OP_GET:
+		operation->validate = NULL;
+		operation->execute = exec_get;
+		break;
+	case OP_DEL:
+		operation->validate = validate_del;
+		operation->execute = exec_del;
+		break;
+	case OP_NONE:
+		break;
+	}
 	operation->next = NULL;
 	/* First entry */
 	if (*list == NULL) {
@@ -320,58 +452,18 @@ static void destroy_operations(struct operation** list)
 	}
 }
 
-enum mode {
-	MODE_NONE = 0,
-	MODE_USER_READ = 1 << 0,
-	MODE_USER_WRITE = 1 << 1,
-	MODE_SYSTEM_READ = 1 << 2,
-	MODE_SYSTEM_WRITE = 1 << 3,
-};
-
-struct opts {
-	enum mode mode;
-	struct operation* operations;
-};
-
 static int validate_operations(const struct opts* opts)
 {
 	enum op found_op_types = OP_NONE;
-
+	int r = 0;
 	for (struct operation* it = opts->operations; it != NULL; it = it->next) {
 		pr_dbg("operation: %d, key: %s, val: %s\n",
 				it->op, it->key, it->value);
-
 		found_op_types |= it->op;
-
-		switch (it->op) {
-		case OP_SET:
-			if ((opts->mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE) {
-				if (!starts_with_sysprefix(it->key)) {
-					pr_err("required prefix \"%s\" missing in system attribute\n", xstr(NVRAM_SYSTEM_PREFIX));
-					return -EINVAL;
-				}
-				if (!system_unlocked()) {
-					pr_err("system write locked\n")
-					return -EACCES;
-				}
-			}
-			if ((opts->mode & MODE_USER_WRITE) == MODE_USER_WRITE) {
-				if (starts_with_sysprefix(it->key)) {
-					pr_err("forbidden prefix \"%s\" in user attribute\n", xstr(NVRAM_SYSTEM_PREFIX));
-					return -EINVAL;
-				}
-			}
-			break;
-		case OP_DEL:
-			if (((opts->mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE) && !system_unlocked()) {
-				pr_err("system write locked\n")
-				return -EACCES;
-			}
-			break;
-		case OP_NONE:
-		case OP_LIST:
-		case OP_GET:
-			break;
+		if (it->validate != NULL) {
+			r = it->validate(it, opts->mode);
+			if (r != 0)
+				return r;
 		}
 	}
 
@@ -396,54 +488,13 @@ static int execute_operations(const struct opts* opts, struct nvram_format* form
 	int write_performed = 0;
 
 	for (struct operation* it = opts->operations; it != NULL; it = it->next) {
-		switch (it->op) {
-		case OP_SET:
-			r = -EINVAL;
-			if ((opts->mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE)
-				r = add_list_entry("system", list_system, it->key, it->value);
-			else if ((opts->mode & MODE_USER_WRITE) == MODE_USER_WRITE)
-				r = add_list_entry("user", list_user, it->key, it->value);
-			if (r < 0)
-				return r;
-			if (r == 1) {
-				pr_dbg("written\n");
-				write_performed = 1;
-			}
-			break;
-		case OP_DEL:
-			r = -EINVAL;
-			if ((opts->mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE)
-				r = remove_list_entry("system", list_system, it->key);
-			else if ((opts->mode & MODE_USER_WRITE) == MODE_USER_WRITE)
-				r = remove_list_entry("user", list_user, it->key);
-			if (r == 1) {
-				pr_dbg("deleted\n");
-				write_performed = 1;
-			}
-			break;
-		case OP_GET:
-			r = -ENOENT;
-			/* Prefer retrieving from system if allowed */
-			if ((opts->mode & MODE_SYSTEM_READ) == MODE_SYSTEM_READ)
-				r = print_list_entry("system", *list_system, it->key);
-			/* Retrieve from user if not already found and allowed */
-			if (r != 0 && (opts->mode & MODE_USER_READ) == MODE_USER_READ)
-				r = print_list_entry("user", *list_user, it->key);
-			if (r) {
-				pr_dbg("key not found: %s\n", it->key);
-				return r;
-			}
-			break;
-		case OP_LIST:
-			if ((opts->mode & MODE_SYSTEM_READ) == MODE_SYSTEM_READ)
-				print_list("system", *list_system);
-			if ((opts->mode & MODE_USER_READ) == MODE_USER_READ)
-				print_list("user", *list_user);
-			/* only perform single list operation */
-			return 0;
-		case OP_NONE:
-			break;
+		if (it->execute == NULL) {
+			pr_err("operation should not be NULL\n");
+			return -EBADF;
 		}
+		r = it->execute(it, opts->mode, list_system, list_user, &write_performed);
+		if (r != 0)
+			return r;
 	}
 
 	r = 0;
@@ -459,6 +510,9 @@ static int execute_operations(const struct opts* opts, struct nvram_format* form
 	return r;
 }
 
+/* Allow greater cognitive complexity due to argument parsing
+ *
+ * NOLINTNEXTLINE(readability-function-cognitive-complexity) */
 int main(int argc, char** argv)
 {
 	struct nvram *nvram_system = NULL;
@@ -476,6 +530,7 @@ int main(int argc, char** argv)
 	char* user_b_override = NULL;
 	char* system_a_override = NULL;
 	char* system_b_override = NULL;
+	int fd_lock = -1;
 	int r = 0;
 
 	if (get_env_long(NVRAM_ENV_DEBUG))
@@ -618,7 +673,7 @@ int main(int argc, char** argv)
 	if (r)
 		goto exit;
 
-	int fd_lock = acquire_lockfile(NVRAM_LOCKFILE);
+	fd_lock = acquire_lockfile(NVRAM_LOCKFILE);
 	if (fd_lock < 0)
 		goto exit;
 
