@@ -6,6 +6,7 @@
 #include <limits.h>
 #include <errno.h>
 #include <assert.h>
+#include <zlib.h>
 #include "log.h"
 #include "nvram_format.h"
 #include "nvram_interface.h"
@@ -75,6 +76,7 @@ struct platform_header {
 	uint32_t rsvd[227]; //NOLINT(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
 	/*
 	 * crc32 of header, not including field hdr_crc32.
+	 * zlib crc32 format.
 	 */
 	uint32_t hdr_crc32;
 };
@@ -178,8 +180,9 @@ static int parse_header(struct platform_header* header, const uint8_t* buf, size
 
 	/* header */
 	header->hdr_crc32 = letou32(buf + offsetof(struct platform_header, hdr_crc32));
-	const uint32_t crc32 = libnvram_crc32(buf, offsetof(struct platform_header, hdr_crc32));
-	if (header->hdr_crc32 != crc32)
+	const uint32_t crc32_init = crc32(0L, Z_NULL, 0);
+	const uint32_t crc32_calc = crc32(crc32_init, buf, offsetof(struct platform_header, hdr_crc32));
+	if (header->hdr_crc32 != crc32_calc)
 		return -EINVAL;
 	header->hdr_magic = letou32(buf + offsetof(struct platform_header, hdr_magic));
 	if (header->hdr_magic != HEADER_MAGIC)
@@ -530,8 +533,9 @@ static int serialize_header(const struct platform_header* header, uint8_t* buf, 
 	u32tole(header->config3, buf + offsetof(struct platform_header, config3));
 	u32tole(header->config4, buf + offsetof(struct platform_header, config4));
 
-	const uint32_t crc32 = libnvram_crc32(buf, offsetof(struct platform_header, hdr_crc32));
-	u32tole(crc32, buf + offsetof(struct platform_header, hdr_crc32));
+	const uint32_t crc32_init = crc32(0L, Z_NULL, 0);
+	const uint32_t crc32_calc = crc32(crc32_init, buf, offsetof(struct platform_header, hdr_crc32));
+	u32tole(crc32_calc, buf + offsetof(struct platform_header, hdr_crc32));
 
 	pr_dbg("header content:\n");
 	pr_dbg("  hdr_magic:             0x%" PRIx32 "\n", header->hdr_magic);
@@ -546,7 +550,7 @@ static int serialize_header(const struct platform_header* header, uint8_t* buf, 
 	pr_dbg("  config2:           0x%" PRIx32 "\n", header->config2);
 	pr_dbg("  config3:           0x%" PRIx32 "\n", header->config3);
 	pr_dbg("  config4:           0x%" PRIx32 "\n", header->config4);
-	pr_dbg("  hdr_crc32:         0x%" PRIx32 "\n", crc32);
+	pr_dbg("  hdr_crc32:         0x%" PRIx32 "\n", crc32_calc);
 
 	return 0;
 }
