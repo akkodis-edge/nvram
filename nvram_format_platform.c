@@ -330,6 +330,13 @@ static int header_to_list(struct libnvram_list** list, const struct platform_hea
 	int r = 0;
 
 	switch (header->hdr_version) {
+	/* Example of adding header version 1:
+	 * case 1:
+	 *     r = header_to_list_version_iterator(header, version_1_fields, ARRAY_SIZE(version_1_fields), list);
+	 *     if (r != 0)
+	 *         return r;
+	 *     [[FALLTHROUGH]
+	 * */
 	case 0:
 		r = header_to_list_version_iterator(header, version_0_fields, ARRAY_SIZE(version_0_fields), list);
 		if (r != 0)
@@ -474,6 +481,14 @@ static int list_to_header(const struct libnvram_list* list, struct platform_head
 	for (struct libnvram_list* it = libnvram_list_begin(list); it != libnvram_list_end(list); it = libnvram_list_next(it)) {
 		const struct libnvram_entry* entry = libnvram_list_deref(it);
 		switch (header->hdr_version) {
+			/* Example of adding header version 1:
+			 * case 1:
+			 *     r = list_to_header_version_iterator(header, version_1_fields, ARRAY_SIZE(version_1_fields), entry);
+			 *     if (r < 0)
+			 *         return r;
+			 *     [[FALLTHROUGH]]
+			 *      --- Allow r == 0 if key not found, version0 will return with error if key still not resolved.
+			 * */
 		case 0:
 			r = list_to_header_version_iterator(header, version_0_fields, ARRAY_SIZE(version_0_fields), entry);
 			if (r < 0)
