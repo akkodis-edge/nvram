@@ -108,7 +108,7 @@ static int release_lockfile(const char* path, int fdlock)
 {
 	int r = 0;
 
-	if (fdlock) {
+	if (fdlock >= 0) {
 		if(close(fdlock)) {
 			r = errno;
 			pr_err("failed closing lockfile: %s [%d]: %s", path, r, strerror(r));
@@ -125,35 +125,6 @@ static int release_lockfile(const char* path, int fdlock)
 
 	return 0;
 }
-
-enum op {
-	OP_NONE = 0,
-	OP_LIST = 1 << 0,
-	OP_SET = 1 << 1,
-	OP_GET = 1 << 2,
-	OP_DEL = 1 << 3,
-};
-
-struct operation {
-	enum op op;
-	char* key;
-	char* value;
-};
-
-enum mode {
-	MODE_NONE = 0,
-	MODE_USER_READ = 1 << 0,
-	MODE_USER_WRITE = 1 << 1,
-	MODE_SYSTEM_READ = 1 << 2,
-	MODE_SYSTEM_WRITE = 1 << 3,
-};
-
-#define MAX_OP 10
-struct opts {
-	enum mode mode;
-	int op_count;
-	struct operation operations[MAX_OP];
-};
 
 static void print_usage()
 {
@@ -296,20 +267,86 @@ static int remove_list_entry(const char* list_name, struct libnvram_list** list,
 	return libnvram_list_remove(list, (uint8_t*) key, key_len) == 1;
 }
 
+enum op {
+	OP_NONE = 0,
+	OP_LIST = 1 << 0,
+	OP_SET = 1 << 1,
+	OP_GET = 1 << 2,
+	OP_DEL = 1 << 3,
+};
+
+struct operation {
+	enum op op;
+	char* key;
+	char* value;
+	struct operation* next;
+};
+
+static int add_operation(struct operation** list, enum op op, char* key, char* value)
+{
+	struct operation* operation = malloc(sizeof(struct operation));
+	if (operation == NULL) {
+		pr_err("Failed allocating operation memory\n");
+		return -ENOMEM;
+	}
+	operation->op = op;
+	operation->key = key;
+	operation->value = value;
+	operation->next = NULL;
+	/* First entry */
+	if (*list == NULL) {
+		*list = operation;
+		return 0;
+	}
+	struct operation* it = *list;
+	while (it->next != NULL)
+		it = it->next;
+	it->next = operation;
+	return 0;
+}
+
+static void destroy_operations(struct operation** list)
+{
+	if (list != NULL) {
+		struct operation* it = *list;
+		struct operation* next = NULL;
+		while (it != NULL) {
+			next = it->next;
+			free(it);
+			it = next;
+
+		}
+		*list = NULL;
+	}
+}
+
+enum mode {
+	MODE_NONE = 0,
+	MODE_USER_READ = 1 << 0,
+	MODE_USER_WRITE = 1 << 1,
+	MODE_SYSTEM_READ = 1 << 2,
+	MODE_SYSTEM_WRITE = 1 << 3,
+};
+
+struct opts {
+	enum mode mode;
+	struct operation* operations;
+};
+
 static int validate_operations(const struct opts* opts)
 {
 	enum op found_op_types = OP_NONE;
 
-	for (int i = 0; i < opts->op_count; ++i) {
+	for (struct operation* it = opts->operations; it != NULL; it = it->next) {
 		pr_dbg("operation: %d, key: %s, val: %s\n",
-				opts->operations[i].op, opts->operations[i].key, opts->operations[i].value);
+				it->op, it->key, it->value);
 
-		found_op_types |= opts->operations[i].op;
+		found_op_types |= it->op;
 
-		switch (opts->operations[i].op) {
+		switch (it->op) {
 		case OP_SET:
 			if ((opts->mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE) {
-				if (!starts_with_sysprefix(opts->operations[i].key)) {
+				if (!starts_with_sysprefix(it->key)) {
 					pr_err("required prefix \"%s\" missing in system attribute\n", xstr(NVRAM_SYSTEM_PREFIX));
 					return -EINVAL;
 				}
@@ -319,7 +356,7 @@ static int validate_operations(const struct opts* opts)
 				}
 			}
 			if ((opts->mode & MODE_USER_WRITE) == MODE_USER_WRITE) {
-				if (starts_with_sysprefix(opts->operations[i].key)) {
+				if (starts_with_sysprefix(it->key)) {
 					pr_err("forbidden prefix \"%s\" in user attribute\n", xstr(NVRAM_SYSTEM_PREFIX));
 					return -EINVAL;
 				}
@@ -358,14 +395,14 @@ static int execute_operations(const struct opts* opts, struct nvram_format* form
 	int r = 0;
 	int write_performed = 0;
 
-	for (int i = 0; i < opts->op_count; ++i) {
-		switch (opts->operations[i].op) {
+	for (struct operation* it = opts->operations; it != NULL; it = it->next) {
+		switch (it->op) {
 		case OP_SET:
 			r = -EINVAL;
 			if ((opts->mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE)
-				r = add_list_entry("system", list_system, opts->operations[i].key, opts->operations[i].value);
+				r = add_list_entry("system", list_system, it->key, it->value);
 			else if ((opts->mode & MODE_USER_WRITE) == MODE_USER_WRITE)
-				r = add_list_entry("user", list_user, opts->operations[i].key, opts->operations[i].value);
+				r = add_list_entry("user", list_user, it->key, it->value);
 			if (r < 0)
 				return r;
 			if (r == 1) {
@@ -376,9 +413,9 @@ static int execute_operations(const struct opts* opts, struct nvram_format* form
 		case OP_DEL:
 			r = -EINVAL;
 			if ((opts->mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE)
-				r = remove_list_entry("system", list_system, opts->operations[i].key);
+				r = remove_list_entry("system", list_system, it->key);
 			else if ((opts->mode & MODE_USER_WRITE) == MODE_USER_WRITE)
-				r = remove_list_entry("user", list_user, opts->operations[i].key);
+				r = remove_list_entry("user", list_user, it->key);
 			if (r == 1) {
 				pr_dbg("deleted\n");
 				write_performed = 1;
@@ -388,12 +425,12 @@ static int execute_operations(const struct opts* opts, struct nvram_format* form
 			r = -ENOENT;
 			/* Prefer retrieving from system if allowed */
 			if ((opts->mode & MODE_SYSTEM_READ) == MODE_SYSTEM_READ)
-				r = print_list_entry("system", *list_system, opts->operations[i].key);
+				r = print_list_entry("system", *list_system, it->key);
 			/* Retrieve from user if not already found and allowed */
 			if (r != 0 && (opts->mode & MODE_USER_READ) == MODE_USER_READ)
-				r = print_list_entry("user", *list_user, opts->operations[i].key);
+				r = print_list_entry("user", *list_user, it->key);
 			if (r) {
-				pr_dbg("key not found: %s\n", opts->operations[i].key);
+				pr_dbg("key not found: %s\n", it->key);
 				return r;
 			}
 			break;
@@ -424,70 +461,62 @@ static int execute_operations(const struct opts* opts, struct nvram_format* form
 
 int main(int argc, char** argv)
 {
-
+	struct nvram *nvram_system = NULL;
+	struct libnvram_list *list_system = NULL;
+	struct nvram *nvram_user = NULL;
+	struct libnvram_list *list_user = NULL;
+	struct nvram_interface* interface = NULL;
+	struct nvram_format* format = NULL;
 	struct opts opts;
 	memset(&opts, 0, sizeof(opts));
 	opts.mode = MODE_USER_READ | MODE_USER_WRITE | MODE_SYSTEM_READ;
-
-	if (get_env_long(NVRAM_ENV_DEBUG))
-		enable_debug();
-
 	char* interface_override = NULL;
 	char* format_override = NULL;
 	char* user_a_override = NULL;
 	char* user_b_override = NULL;
 	char* system_a_override = NULL;
 	char* system_b_override = NULL;
+	int r = 0;
+
+	if (get_env_long(NVRAM_ENV_DEBUG))
+		enable_debug();
 
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp("--set", argv[i]) || !strcmp("set", argv[i])) {
 			if (i + 2 >= argc) {
 				fprintf(stderr, "Too few arguments for command set\n");
-				return EINVAL;
+				r = -EINVAL;
+				goto exit;
 			}
-			if (opts.op_count >= MAX_OP) {
-				fprintf(stderr, "Too many operations\n");
-				return EINVAL;
-			}
-			opts.operations[opts.op_count].op = OP_SET;
-			opts.operations[opts.op_count].key = argv[i + 1];
-			opts.operations[opts.op_count].value = argv[i + 2];
-			opts.op_count++;
+			r = add_operation(&opts.operations, OP_SET, argv[i + 1], argv[i + 2]);
+			if (r != 0)
+				goto exit;
 			i += 2;
 		}
 		else if (!strcmp("--get", argv[i]) || !strcmp("get", argv[i])) {
 			if (++i >= argc) {
 				fprintf(stderr, "Too few arguments for command get\n");
-				return EINVAL;
+				r = -EINVAL;
+				goto exit;
 			}
-			if (opts.op_count >= MAX_OP) {
-				fprintf(stderr, "Too many operations\n");
-				return EINVAL;
-			}
-			opts.operations[opts.op_count].op = OP_GET;
-			opts.operations[opts.op_count].key = argv[i];
-			opts.op_count++;
+			r = add_operation(&opts.operations, OP_GET, argv[i], NULL);
+			if (r != 0)
+				goto exit;
 		}
 		else if (!strcmp("--list", argv[i]) || !strcmp("list", argv[i])) {
-			if (opts.op_count >= MAX_OP) {
-				fprintf(stderr, "Too many operations\n");
-				return EINVAL;
-			}
-			opts.operations[opts.op_count].op = OP_LIST;
-			opts.op_count++;
+			r = add_operation(&opts.operations, OP_LIST, NULL, NULL);
+			if (r != 0)
+				goto exit;
 		}
 		else if(!strcmp("--del", argv[i]) || !strcmp("delete", argv[i])) {
 			if (++i >= argc) {
 				fprintf(stderr, "Too few arguments for command delete\n");
-				return EINVAL;
+				r = -EINVAL;
+				goto exit;
 			}
-			if (opts.op_count >= MAX_OP) {
-				fprintf(stderr, "Too many operations\n");
-				return EINVAL;
-			}
-			opts.operations[opts.op_count].op = OP_DEL;
-			opts.operations[opts.op_count].key = argv[i];
-			opts.op_count++;
+			r = add_operation(&opts.operations, OP_DEL, argv[i], NULL);
+			if (r != 0)
+				goto exit;
 		}
 		else if (!strcmp("--sys", argv[i])) {
 			opts.mode = MODE_SYSTEM_READ | MODE_SYSTEM_WRITE;
@@ -497,74 +526,85 @@ int main(int argc, char** argv)
 		}
 		else if (!strcmp("-h", argv[i]) || !strcmp("--help", argv[i])) {
 			print_usage();
-			return 1;
+			r = -EINVAL;
+			goto exit;
 		}
 		else if (!strcmp("-f", argv[i]) || !strcmp("--format", argv[i])) {
 			if (++i >= argc) {
 				fprintf(stderr, "Too few arguments for -f, --format\n");
-				return EINVAL;
+				r = -EINVAL;
+				goto exit;
 			}
 			format_override = argv[i];
 		}
 		else if (!strcmp("-i", argv[i]) || !strcmp("--interface", argv[i])) {
 			if (++i >= argc) {
 				fprintf(stderr, "Too few arguments for -i, --interface\n");
-				return EINVAL;
+				r = -EINVAL;
+				goto exit;
 			}
 			interface_override = argv[i];
 		}
 		else if (!strcmp("--user_a", argv[i])) {
 			if (++i >= argc) {
 				fprintf(stderr, "Too few arguments for --user_a\n");
-				return EINVAL;
+				r = -EINVAL;
+				goto exit;
 			}
 			user_a_override = argv[i];
 		}
 		else if (!strcmp("--user_b", argv[i])) {
 			if (++i >= argc) {
 				fprintf(stderr, "Too few arguments for --user_b\n");
-				return EINVAL;
+				r = -EINVAL;
+				goto exit;
 			}
 			user_b_override = argv[i];
 		}
 		else if (!strcmp("--sys_a", argv[i])) {
 			if (++i >= argc) {
 				fprintf(stderr, "Too few arguments for --sys_a\n");
-				return EINVAL;
+				r = -EINVAL;
+				goto exit;
 			}
 			system_a_override = argv[i];
 		}
 		else if (!strcmp("--sys_b", argv[i])) {
 			if (++i >= argc) {
 				fprintf(stderr, "Too few arguments for --sys_b\n");
-				return EINVAL;
+				r = -EINVAL;
+				goto exit;
 			}
 			system_b_override = argv[i];
 		}
 		else {
 			fprintf(stderr, "unknown argument: %s\n", argv[i]);
-			return 1;
+			r = -EINVAL;
+			goto exit;
 		}
 	}
 
-	if (opts.op_count == 0) {
-		opts.operations[0].op = OP_LIST;
-		opts.op_count++;
+	if (opts.operations == NULL) {
+		r = add_operation(&opts.operations, OP_LIST, NULL, NULL);
+		if (r != 0)
+			goto exit;
 	}
 
 	const char* interface_selected = get_env_str(NVRAM_ENV_INTERFACE, xstr(NVRAM_INTERFACE_DEFAULT));
 	const char* interface_name = interface_override != NULL ? interface_override : interface_selected;
-	struct nvram_interface* interface = nvram_get_interface(interface_name);
+	interface = nvram_get_interface(interface_name);
 	if (interface == NULL) {
 		fprintf(stderr, "Unresolved interface: %s\n", interface_name);
-		return EINVAL;
+		r = -EINVAL;
+		goto exit;
 	}
 	const char* format_selected = get_env_str(NVRAM_ENV_FORMAT, xstr(NVRAM_FORMAT_DEFAULT));
 	const char* format_name = format_override != NULL ? format_override : format_selected;
-	struct nvram_format* format = nvram_get_format(format_name);
+	format = nvram_get_format(format_name);
 	if (format == NULL) {
 		fprintf(stderr, "Unresolved format: %s\n", format_name);
-		return EINVAL;
+		r = -EINVAL;
+		goto exit;
 	}
 
 	pr_dbg("interface: %s\n", interface_name);
@@ -574,20 +614,13 @@ int main(int argc, char** argv)
 	pr_dbg("user_write: %s\n", (opts.mode & MODE_USER_WRITE) == MODE_USER_WRITE ? "yes" : "no");
 	pr_dbg("user_read: %s\n", (opts.mode & MODE_USER_READ) == MODE_USER_READ ? "yes" : "no");
 
-	int r = 0;
-
 	r = validate_operations(&opts);
 	if (r)
-		return -r;
-
-	struct nvram *nvram_system = NULL;
-	struct libnvram_list *list_system = NULL;
-	struct nvram *nvram_user = NULL;
-	struct libnvram_list *list_user = NULL;
+		goto exit;
 
 	int fd_lock = acquire_lockfile(NVRAM_LOCKFILE);
 	if (fd_lock < 0)
-		return -r;
+		goto exit;
 
 	if ((opts.mode & (MODE_SYSTEM_WRITE | MODE_SYSTEM_READ)) != 0) {
 		const char *nvram_system_a = system_a_override != NULL ? system_a_override :
@@ -624,11 +657,14 @@ int main(int argc, char** argv)
 
 exit:
 	release_lockfile(NVRAM_LOCKFILE, fd_lock);
+	destroy_operations(&opts.operations);
 	if (list_system)
 		destroy_libnvram_list(&list_system);
 	if (list_user)
 		destroy_libnvram_list(&list_user);
-	format->close(&nvram_system);
-	format->close(&nvram_user);
+	if (format != NULL) {
+		format->close(&nvram_system);
+		format->close(&nvram_user);
+	}
 	return -r;
 }
