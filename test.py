@@ -523,6 +523,9 @@ class test_platform_format(unittest.TestCase):
             args.extend(['--set', key, val])
         nvram(self.env, args, sys=self.sys)
 
+    def nvram_get(self, key):
+        return nvram(self.env, ['--user', '--get', key], sys=self.sys).rstrip()
+
     def nvram_list(self):
         stdout = nvram(self.env, ['--user', '--list'], sys=self.sys)
         return dict(pair.split("=") for pair in stdout.split())
@@ -535,10 +538,58 @@ class test_platform_format(unittest.TestCase):
             'ddrc_blob_type': '0x3',
             'ddrc_blob_crc32': '0x4',
             'ddrc_size': '0x5',
+            'config1': '0x6',
+            'config2': '0x7',
+            'config3': '0x8',
+            'config4': '0x9',
             }
         self.nvram_set([(key, val) for key, val in version_0_fields.items()])
         ret = self.nvram_list()
         self.assertEqual(version_0_fields, ret)
+        
+    def test_field_u32(self):
+        key = 'config1'
+        values_ok = {
+            '0xffffffff': '0xffffffff',
+            '0XFFFFFFFF': '0xffffffff',
+            '4294967295': '0xffffffff',
+            '0x0': '0x0',
+            '0X0': '0x0',
+            '0': '0x0',
+            }
+        for val, ret in values_ok.items():
+            self.nvram_set([(key, val)])
+            self.assertEqual(ret, self.nvram_get(key))
+            
+        values_err = [
+            '0xffffffffff',
+            '4294967296',
+            ]
+        for val in values_err:
+            with self.assertRaises(CalledProcessError):
+                self.nvram_set([(key, val)])
+                
+    def test_field_u64(self):
+        key = 'ddrc_size'
+        values_ok = {
+            '0xffffffffffffffff': '0xffffffffffffffff',
+            '0XFFFFFFFFFFFFFFFF': '0xffffffffffffffff',
+            '18446744073709551615': '0xffffffffffffffff',
+            '0x0': '0x0',
+            '0X0': '0x0',
+            '0': '0x0',
+            }
+        for val, ret in values_ok.items():
+            self.nvram_set([(key, val)])
+            self.assertEqual(ret, self.nvram_get(key))
+            
+        values_err = [
+            '0xffffffffffffffffff',
+            '18446744073709551616',
+            ]
+        for val in values_err:
+            with self.assertRaises(CalledProcessError):
+                self.nvram_set([(key, val)])
         
 if __name__ == '__main__':
     unittest.main()
