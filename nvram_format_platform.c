@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <errno.h>
 #include <assert.h>
 #include "log.h"
@@ -296,6 +297,8 @@ static int header_to_list(struct libnvram_list** list, const struct platform_hea
 	return 0;
 }
 
+static_assert(sizeof(unsigned long int) >= sizeof(uint32_t), "unsigned long smaller than uint32_t, format conversion invalid");
+static_assert(sizeof(unsigned long long int) >= sizeof(uint64_t), "unsigned long long smaller than uint64_t, format conversion invalid");
 static int value_to_header(struct platform_header* header, enum field_name name, const struct field* field, const struct libnvram_entry* entry)
 {
 	/* Ensure value to parse is null terminated */
@@ -306,20 +309,31 @@ static int value_to_header(struct platform_header* header, enum field_name name,
 	union data data;
 	switch (field->type) {
 	case FIELD_TYPE_U32:
-		if ((sscanf((char*) entry->value, "0x%" SCNx32 "", &data.u32) != 1)
-			&& (sscanf((char*) entry->value, "0X%" SCNx32 "", &data.u32) != 1)
-			&& (sscanf((char*) entry->value, "%" SCNu32 "", &data.u32) != 1)) {
-			pr_err("field id [%d] with key \"%s\" not of type u32\n", name, field->key);
-			return -EINVAL;
+		{
+			char* endptr = NULL;
+			const unsigned long int val = strtoul((char*) entry->value, &endptr, 0);
+			if ((val == 0 && endptr == NULL)
+				|| (val == ULONG_MAX && errno == ERANGE)
+				|| (val > UINT32_MAX)) {
+				pr_err("field id [%d] with key \"%s\" not of type u32\n", name, field->key);
+				return -EINVAL;
+			}
+			data.u32 = val;
 		}
 		break;
 	case FIELD_TYPE_U64:
-		if ((sscanf((char*) entry->value, "0x%" SCNx64 "", &data.u64) != 1)
-			&& (sscanf((char*) entry->value, "0X%" SCNx64 "", &data.u64) != 1)
-			&& (sscanf((char*) entry->value, "%" SCNu64 "", &data.u64) != 1)) {
+	{
+		char* endptr = NULL;
+		const unsigned long long int val = strtoull((char*) entry->value, &endptr, 0);
+		pr_err("ret: 0x%llx: errno: %d: ptr: %p\n", val, errno, endptr);
+		if ((val == 0 && endptr == NULL)
+			|| (val == ULLONG_MAX && errno == ERANGE)
+			|| (val > UINT64_MAX)) {
 			pr_err("field id [%d] with key \"%s\" not of type u64\n", name, field->key);
 			return -EINVAL;
 		}
+		data.u64 = val;
+	}
 		break;
 	case FIELD_TYPE_STRING:
 		data.str = (char*) entry->value;
