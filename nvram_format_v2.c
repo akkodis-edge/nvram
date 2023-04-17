@@ -70,6 +70,7 @@ static int read_section(struct nvram_interface* interface, struct nvram_priv* pr
 
 	if (total_size >= libnvram_header_len()) {
 		struct libnvram_header hdr;
+		memset(&hdr, 0, sizeof(hdr));
 		r = read_header(interface, priv, &hdr);
 		switch (r) {
 		case 1: /* valid */
