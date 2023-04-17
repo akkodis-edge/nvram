@@ -502,5 +502,44 @@ class test_legacy_format(unittest.TestCase):
         with self.assertRaises(CalledProcessError):
             self.nvram_get('key1')
             
+class test_platform_format(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.dir = self.tmpdir.name
+        self.env = {
+                'NVRAM_FORMAT': 'platform',
+                'NVRAM_INTERFACE': 'file',
+                'NVRAM_FILE_USER_A': f'{self.dir}/user_a',
+                'NVRAM_FILE_USER_B': '',
+            }
+        self.sys = False
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+        
+    def nvram_set(self, pairs):
+        args = ['--user']
+        for key, val in pairs:
+            args.extend(['--set', key, val])
+        nvram(self.env, args, sys=self.sys)
+
+    def nvram_list(self):
+        stdout = nvram(self.env, ['--user', '--list'], sys=self.sys)
+        return dict(pair.split("=") for pair in stdout.split())
+    
+    def test_version_0(self):
+        version_0_fields = {
+            'name': 'test_name',
+            'ddrc_blob_offset': '0x1',
+            'ddrc_blob_size': '0x2',
+            'ddrc_blob_type': '0x3',
+            'ddrc_blob_crc32': '0x4',
+            'ddrc_size': '0x5',
+            }
+        self.nvram_set([(key, val) for key, val in version_0_fields.items()])
+        ret = self.nvram_list()
+        self.assertEqual(version_0_fields, ret)
+        
 if __name__ == '__main__':
     unittest.main()
+    
