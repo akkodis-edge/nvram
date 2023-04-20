@@ -384,20 +384,31 @@ static int execute_operations(const struct opts* opts, struct nvram_format* form
 				write_performed = 1;
 			}
 			break;
-		case OP_GET:
-			r = -ENOENT;
-			/* Prefer retrieving from system if allowed */
-			if ((opts->mode & MODE_SYSTEM_READ) == MODE_SYSTEM_READ)
-				r = print_list_entry("system", *list_system, opts->operations[i].key);
-			/* Retrieve from user if not already found and allowed */
-			if (r != 0 && (opts->mode & MODE_USER_READ) == MODE_USER_READ)
-				r = print_list_entry("user", *list_user, opts->operations[i].key);
-			if (r) {
-				pr_dbg("key not found: %s\n", opts->operations[i].key);
-				return r;
-			}
-			break;
-		case OP_LIST:
+        case OP_GET:
+            r = -ENOENT;
+            /* Prefer retrieving from system if allowed */
+            if ((opts->mode & MODE_SYSTEM_READ) == MODE_SYSTEM_READ)
+                r = print_list_entry("system", *list_system,
+                                     opts->operations[i].key);
+            /* Retrieve from user if not already found and allowed */
+            if (r != 0 && (opts->mode & MODE_USER_READ) == MODE_USER_READ)
+                r = print_list_entry("user", *list_user,
+                                     opts->operations[i].key);
+            /* Retry keys starting with LM_ by prefixing with SYS_ */
+            if (r != 0 && strncmp(opts->operations[i].key, "LM_", 3) == 0 &&
+                (opts->mode & MODE_SYSTEM_READ) == MODE_SYSTEM_READ) {
+                char *prefixed_key = malloc(0x1000);
+                strcpy(prefixed_key, "SYS_");
+                strcat(prefixed_key, opts->operations[i].key);
+                r = print_list_entry("system", *list_system, prefixed_key);
+				free(prefixed_key);
+            }
+            if (r) {
+                pr_dbg("key not found: %s\n", opts->operations[i].key);
+                return r;
+            }
+            break;
+        case OP_LIST:
 			if ((opts->mode & MODE_SYSTEM_READ) == MODE_SYSTEM_READ)
 				print_list("system", *list_system);
 			if ((opts->mode & MODE_USER_READ) == MODE_USER_READ)
