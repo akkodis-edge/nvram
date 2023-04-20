@@ -317,6 +317,8 @@ static int header_to_list_version_iterator(const struct platform_header* header,
 {
 	for (size_t i = 0; i < len; ++i) {
 		const enum field_name field_index = version_fields[i];
+		if (ARRAY_SIZE(fields) < field_index)
+			return -EINVAL;
 		const struct field* field = &fields[field_index];
 		int r = value_to_list(header, field_index, field, list);
 		if (r != 0)
@@ -460,6 +462,8 @@ static int list_to_header_version_iterator(struct platform_header* header, const
 {
 	for (size_t i = 0; i < len; ++i) {
 		const enum field_name field_index = version_fields[i];
+		if (ARRAY_SIZE(fields) < field_index)
+			return -EINVAL;
 		const struct field* field = &fields[field_index];
 		if (strncmp(field->key, (char*) entry->key, entry->key_len) == 0) {
 			int r = value_to_header(header, field_index, field, entry);
