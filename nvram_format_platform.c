@@ -273,7 +273,7 @@ static int value_to_list(const struct platform_header* header, enum field_name n
 		data.u32 = header->config4;
 		break;
 	default:
-		pr_err("Unknown field id [%d] with key \"%s\"\n", name, field->key);
+		pr_err("Unknown field id [%d] with key \"%s\"\n", name, field->key != NULL ? field->key : "");
 		return -EINVAL;
 	}
 
