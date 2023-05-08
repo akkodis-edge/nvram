@@ -131,7 +131,7 @@ static int efi_write(struct nvram_priv* priv, const uint8_t* buf, size_t size)
 	int r = 0;
 
 	r = set_immutable(priv->path, false);
-	if (r) {
+	if (r != 0 && r != -ENOENT) {
 		return r;
 	}
 
