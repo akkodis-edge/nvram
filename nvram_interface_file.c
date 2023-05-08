@@ -111,7 +111,7 @@ static int file_write(struct nvram_priv* priv, const uint8_t* buf, size_t size)
 		return -EINVAL;
 	}
 
-	int fd = open(priv->path, O_WRONLY | O_CREAT, S_IWUSR | S_IRUSR);
+	int fd = open(priv->path, O_WRONLY | O_CREAT, S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
 	if (fd < 0) {
 		return -errno;
 	}
