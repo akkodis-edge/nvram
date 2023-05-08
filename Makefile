@@ -109,9 +109,9 @@ endif
 ifeq ($(NVRAM_INTERFACE_EFI), 1)
 OBJS += nvram_interface_efi.o
 LDFLAGS += -le2p
-NVRAM_EFI_SYSTEM_A ?= /sys/firmware/efi/efivars/604dafe4-587a-47f6-8604-3d33eb83da3d-system
+NVRAM_EFI_SYSTEM_A ?= /sys/firmware/efi/efivars/NvramSystem-604dafe4-587a-47f6-8604-3d33eb83da3d
 NVRAM_EFI_SYSTEM_B ?= 
-NVRAM_EFI_USER_A ?= /sys/firmware/efi/efivars/604dafe4-587a-47f6-8604-3d33eb83da3d-user
+NVRAM_EFI_USER_A ?= /sys/firmware/efi/efivars/NvramUser-604dafe4-587a-47f6-8604-3d33eb83da3d
 NVRAM_EFI_USER_B ?= 
 CFLAGS += -DNVRAM_EFI_SYSTEM_A=$(NVRAM_EFI_SYSTEM_A)
 CFLAGS += -DNVRAM_EFI_SYSTEM_B=$(NVRAM_EFI_SYSTEM_B)
