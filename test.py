@@ -436,6 +436,12 @@ class test_legacy_format(unittest.TestCase):
             args.extend(['--set', key, val])
         nvram(self.env, args, sys=self.sys)
         
+    def nvram_del(self, keys):
+        args = []
+        for key in keys:
+            args.extend(['--del', key])
+        nvram(self.env, args, sys=self.sys)
+    
     def nvram_get(self, key):
         return nvram(self.env, ['--get', key], sys=self.sys).rstrip()
     
@@ -453,6 +459,15 @@ class test_legacy_format(unittest.TestCase):
         self.nvram_set([(key1, val1)])
         expects = f'{key1}={val1}\n'
         self.assertEqual(expects, self.read_user_a())
+        
+    def test_del(self):
+        key1 = 'key1'
+        val1 = 'val1'
+        self.nvram_set([(key1, val1)])
+        self.assertEqual(val1, self.nvram_get(key1))
+        self.nvram_del([key1])
+        with self.assertRaises(CalledProcessError):
+            self.nvram_get(key1)
         
     def test_append(self):
         key1 = 'key1'
