@@ -48,13 +48,17 @@ static int system_unlocked(void)
 	return unlock_str && strcmp(unlock_str, NVRAM_SYSTEM_UNLOCK_MAGIC) == 0;
 }
 
+/* Returns 1 if sysprefix enforced, 0 if disabled */
+static int sysprefix_enforced(void)
+{
+	const char* prefix = xstr(NVRAM_SYSTEM_PREFIX);
+	return strlen(prefix) > 0;
+}
+
 static int starts_with_sysprefix(const char* str)
 {
 	const char* prefix = xstr(NVRAM_SYSTEM_PREFIX);
 	const size_t prefix_len = strlen(prefix);
-	/* prefix enforcement disabled if string empty */
-	if (prefix_len == 0)
-		return 0;
 	const size_t str_len = strlen(str);
 	if (str_len > prefix_len) {
 		if(!strncmp(str, prefix, prefix_len)) {
@@ -303,7 +307,7 @@ struct opts {
 static int validate_set(const struct operation* operation, enum mode mode)
 {
 	if ((mode & MODE_SYSTEM_WRITE) == MODE_SYSTEM_WRITE) {
-		if (!starts_with_sysprefix(operation->key)) {
+		if (sysprefix_enforced() && !starts_with_sysprefix(operation->key)) {
 			pr_err("required prefix \"%s\" missing in system attribute\n", xstr(NVRAM_SYSTEM_PREFIX));
 			return -EINVAL;
 		}
@@ -313,7 +317,7 @@ static int validate_set(const struct operation* operation, enum mode mode)
 		}
 	}
 	if ((mode & MODE_USER_WRITE) == MODE_USER_WRITE) {
-		if (starts_with_sysprefix(operation->key)) {
+		if (sysprefix_enforced() && starts_with_sysprefix(operation->key)) {
 			pr_err("forbidden prefix \"%s\" in user attribute\n", xstr(NVRAM_SYSTEM_PREFIX));
 			return -EINVAL;
 		}
