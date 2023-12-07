@@ -557,6 +557,7 @@ class test_platform_format(unittest.TestCase):
             'config2': '0x7',
             'config3': '0x8',
             'config4': '0x9',
+            'total_size': '0xa',
             }
         self.nvram_set([(key, val) for key, val in version_0_fields.items()])
         ret = self.nvram_list()

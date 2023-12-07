@@ -69,11 +69,17 @@ struct platform_header {
 	uint32_t config2;
 	uint32_t config3;
 	uint32_t config4;
+
 	/*
 	 * Reserved fields for future versions.
 	 * All shall be set to 0.
 	 */
-	uint32_t rsvd[227]; //NOLINT(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+	uint32_t rsvd[226]; //NOLINT(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+
+	/*
+	 * Total size of header, padding and blobs, size from start of header.
+	 */
+	uint32_t total_size;
 	/*
 	 * crc32 of header, not including field hdr_crc32.
 	 * zlib crc32 format.
@@ -111,6 +117,7 @@ enum field_name {
 	FIELD_NAME_CONFIG2,
 	FIELD_NAME_CONFIG3,
 	FIELD_NAME_CONFIG4,
+	FIELD_NAME_TOTAL_SIZE,
 	FIELD_NAME_NUM_FIELDS, /* Used for array size */
 };
 
@@ -136,6 +143,7 @@ static const struct field fields[] = {
 	[FIELD_NAME_CONFIG2]			= {.key = "config2", .type = FIELD_TYPE_U32},
 	[FIELD_NAME_CONFIG3]			= {.key = "config3", .type = FIELD_TYPE_U32},
 	[FIELD_NAME_CONFIG4]			= {.key = "config4", .type = FIELD_TYPE_U32},
+	[FIELD_NAME_TOTAL_SIZE]			= {.key = "total_size", .type = FIELD_TYPE_U32},
 };
 #define ARRAY_SIZE(a) ((sizeof(a) / sizeof(*(a))))
 static_assert(ARRAY_SIZE(fields) == FIELD_NAME_NUM_FIELDS, "Not all fields defined");
@@ -151,6 +159,7 @@ static const enum field_name version_0_fields[] = {
 	FIELD_NAME_CONFIG2,
 	FIELD_NAME_CONFIG3,
 	FIELD_NAME_CONFIG4,
+	FIELD_NAME_TOTAL_SIZE,
 };
 
 union data {
@@ -204,6 +213,7 @@ static int parse_header(struct platform_header* header, const uint8_t* buf, size
 	header->config2 = letou32(buf + offsetof(struct platform_header, config2));
 	header->config3 = letou32(buf + offsetof(struct platform_header, config3));
 	header->config4 = letou32(buf + offsetof(struct platform_header, config4));
+	header->total_size = letou32(buf + offsetof(struct platform_header, total_size));
 
 	/* reserved */
 	const size_t rsvd_len = MEMBER_SIZE(struct platform_header, rsvd);
@@ -271,6 +281,11 @@ static int value_to_list(const struct platform_header* header, enum field_name n
 		if (field->type != FIELD_TYPE_U32)
 			return -EBADF;
 		data.u32 = header->config4;
+		break;
+	case FIELD_NAME_TOTAL_SIZE:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		data.u32 = header->total_size;
 		break;
 	default:
 		pr_err("Unknown field id [%d] with key \"%s\"\n", name, field->key != NULL ? field->key : "");
@@ -449,6 +464,11 @@ static int value_to_header(struct platform_header* header, enum field_name name,
 			return -EBADF;
 		header->config4 = data.u32;
 		break;
+	case FIELD_NAME_TOTAL_SIZE:
+		if (field->type != FIELD_TYPE_U32)
+			return -EBADF;
+		header->total_size = data.u32;
+		break;
 	default:
 		pr_err("Unknown field id [%d] with key \"%s\"\n", name, field->key);
 		return -EINVAL;
@@ -551,6 +571,7 @@ static int serialize_header(const struct platform_header* header, uint8_t* buf, 
 	u32tole(header->config2, buf + offsetof(struct platform_header, config2));
 	u32tole(header->config3, buf + offsetof(struct platform_header, config3));
 	u32tole(header->config4, buf + offsetof(struct platform_header, config4));
+	u32tole(header->total_size, buf + offsetof(struct platform_header, total_size));
 
 	const uint32_t crc32_init = crc32(0L, Z_NULL, 0);
 	const uint32_t crc32_calc = crc32(crc32_init, buf, offsetof(struct platform_header, hdr_crc32));
@@ -569,6 +590,7 @@ static int serialize_header(const struct platform_header* header, uint8_t* buf, 
 	pr_dbg("  config2:           0x%" PRIx32 "\n", header->config2);
 	pr_dbg("  config3:           0x%" PRIx32 "\n", header->config3);
 	pr_dbg("  config4:           0x%" PRIx32 "\n", header->config4);
+	pr_dbg("  total_size:        0x%" PRIx32 "\n", header->total_size);
 	pr_dbg("  hdr_crc32:         0x%" PRIx32 "\n", crc32_calc);
 
 	return 0;
