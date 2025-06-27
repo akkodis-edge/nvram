@@ -536,6 +536,7 @@ int main(int argc, char** argv)
 	char* system_b_override = NULL;
 	int fd_lock = -1;
 	int r = 0;
+	int lock_ret = 0;
 
 	if (get_env_long(NVRAM_ENV_DEBUG))
 		enable_debug();
@@ -715,7 +716,12 @@ int main(int argc, char** argv)
 	r = 0;
 
 exit:
-	release_lockfile(NVRAM_LOCKFILE, fd_lock);
+	lock_ret = release_lockfile(NVRAM_LOCKFILE, fd_lock);
+	/* Return release_lockfile() error unless there already is an error,
+	 * in that case return the original error. */
+	if (r == 0 && lock_ret != 0)
+		r = lock_ret;
+
 	destroy_operations(&opts.operations);
 	if (list_system)
 		destroy_libnvram_list(&list_system);
